@@ -241,6 +241,42 @@ The Notepad POC remains `NOT_IMPLEMENTED` for live validation: the defects are f
 unit-tested, but no live run has been performed, so no claim is made that the round trip
 now passes.
 
+## Failure classification requires evidence inspection
+
+**The rule: a failed observation does not, by itself, establish a perception defect.**
+Classify a verification failure only after inspecting the evidence artifact to determine
+whether the asserted UI state actually occurred.
+
+| Apparent result | Evidence frame shows | Domain | Who fixes it |
+|---|---|---|---|
+| OCR cannot find expected text | the text **is** visible | `perception` | OCR, UIA extraction, region selection, thresholds |
+| OCR cannot find expected text | the text is **absent** | `delivery` | input routing, focus, target authority, event semantics |
+
+The same apparent result has two opposite remediations. Defaulting to either one sends a
+reader to the wrong component — which is how the Notepad round-trip was misdiagnosed as a
+perception fault when the text had in fact never reached the screen.
+
+### This is enforced in code, not just documented
+
+`frameforge/qa/faultdomain.py` provides `classify_failure()`, which **refuses** to name a
+domain unless given an inspected observation and the artifact it came from:
+
+* no inspection supplied → `UNDETERMINED`, plus what artifact would settle it;
+* an inspection claimed with no artifact named → refused, back to `UNDETERMINED`;
+* guarded stop → `GUARDED`, described as correct behaviour rather than a defect.
+
+`Report.first_divergence` carries `fault_domain`, `fault_basis`, `evidence_backed` and
+`evidence_required`, and the rendered markdown states the evidentiary limit inline so a
+reader who skims cannot mistake a default for a finding.
+
+**No `remediation` field exists in the report.** Guardrail G-ROLE-04 forbids the report from
+suggesting fixes; naming a fault domain is diagnosis of a running target, which is Frame
+Forge's job, but a fix is a code change, which is Herman/Cline's. The guidance text lives in
+the module and in the basis line a human reads.
+
+Applies from P7 onward: any new verifier inherits the rule by calling `classify_failure`
+rather than inventing its own failure taxonomy.
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

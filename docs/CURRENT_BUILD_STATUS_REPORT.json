@@ -502,5 +502,38 @@
     "notepad_profile_change": "text_method scan -> unicode; Notepad's editor consumes WM_CHAR, and 'scan' was a workaround for the defect above",
     "live_validation": "NOT PERFORMED; no claim that the round trip now passes",
     "scope": "IMPLEMENTED_NOT_VERIFIED"
+  },
+  "failure_classification_rule": {
+    "rule": "a failed observation does not by itself establish a perception defect; inspect the evidence artifact first",
+    "two_readings": {
+      "state_visible_in_frame": {
+        "domain": "perception",
+        "remediate": "OCR, UIA extraction, region selection, thresholds"
+      },
+      "state_absent_from_frame": {
+        "domain": "delivery",
+        "remediate": "input routing, focus, target authority, event semantics"
+      }
+    },
+    "enforced_in_code": {
+      "module": "src/frameforge/qa/faultdomain.py",
+      "api": "classify_failure(condition, state_observed_present=None, evidence_path=...)",
+      "refuses_without_inspection": true,
+      "refuses_inspection_claim_without_artifact": true,
+      "default": "UNDETERMINED",
+      "report_fields": [
+        "fault_domain",
+        "fault_basis",
+        "evidence_backed",
+        "evidence_required"
+      ],
+      "markdown_states_the_limit_inline": true
+    },
+    "no_remediation_in_report": {
+      "guardrail": "G-ROLE-04",
+      "reason": "naming a fault domain is diagnosis of a running target (Frame Forge's role); a fix is a code change (Herman/Cline's role)",
+      "enforced_by": "tests/integration/test_pipeline.py::test_report_is_schema_shaped_and_actionable"
+    },
+    "applies_from": "P7 onward; new verifiers must call classify_failure rather than invent a taxonomy"
   }
 }

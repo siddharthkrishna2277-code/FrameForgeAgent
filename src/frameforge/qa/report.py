@@ -52,7 +52,13 @@ class StepRecord:
 
 @dataclass(slots=True)
 class Divergence:
-    """First divergence: where observed state stopped matching expectation."""
+    """First divergence: where observed state stopped matching expectation.
+
+    ``fault_domain`` is populated from an *uninspected* default. A report that said only
+    "OCR could not find the text" would read as a perception fault even when the text never
+    reached the screen - which is exactly how the Notepad round-trip was misdiagnosed. See
+    :mod:`frameforge.qa.faultdomain`.
+    """
 
     step: str = ""
     detail: str = ""
@@ -61,6 +67,10 @@ class Divergence:
     frame_index: int = 0
     frame_hash: str = ""
     frame_path: str = ""
+    fault_domain: str = ""
+    fault_basis: str = ""
+    evidence_backed: bool = False
+    evidence_required: str = ""
 
 
 @dataclass(slots=True)
@@ -176,6 +186,26 @@ class Report:
             add(f"- Detail: {fd.detail or '-'}")
             if fd.frame_path:
                 add(f"- Evidence: `{fd.frame_path}`")
+            add("")
+            # The classification is stated first, and its limits stated with it. A reader
+            # who skips to "domain: delivery" and never reads the caveat would be misled,
+            # so the caveat is not optional.
+            if fd.fault_domain:
+                marker = "evidence-backed" if fd.evidence_backed else "**NOT evidence-backed**"
+                add(f"**Fault domain: `{fd.fault_domain}`** ({marker})")
+                add("")
+                add(f"> {fd.fault_basis}")
+                add("")
+                if not fd.evidence_backed:
+                    add(
+                        "This run has not had its evidence inspected, so the fault domain "
+                        "above is a **default**, not a finding. A failed observation does "
+                        "not by itself establish a perception defect: open the evidence "
+                        "frame and confirm whether the asserted state is actually present "
+                        "before deciding where the fault lies."
+                    )
+                if fd.evidence_required:
+                    add(f"- To classify: {fd.evidence_required}")
         else:
             add("No divergence recorded (the run either passed or never got past acquisition).")
         add("")
@@ -208,8 +238,7 @@ class Report:
                 add(f"- ... and {len(self.health_events) - 60} more (see events.jsonl)")
         add("")
 
-        if self.budget:
-            health = self.input_health or {}
+        health = self.input_health or {} if self.budget else {}
         check = health.get("check") or {}
         add("## Input state")
         add("")
@@ -321,9 +350,17 @@ def overall_from(verdicts: list[Verdict]) -> str:
 
 
 def first_divergence(records: list[StepRecord]) -> Divergence:
-    """The earliest failing step. The highest-value field for root-causing."""
+    """The earliest failing step. The highest-value field for root-causing.
+
+    The fault domain is derived here, and defaults to ``undetermined`` because nobody has
+    inspected the evidence frame at report-build time. Emitting ``perception`` as a
+    default would be a lie the reader cannot detect.
+    """
+    from frameforge.qa.faultdomain import classify_failure
+
     for rec in records:
         if rec.disposition in ("fail", "unknown"):
+            fault = classify_failure(rec.condition or "unknown")
             return Divergence(
                 step=rec.name,
                 detail=rec.detail,
@@ -332,6 +369,10 @@ def first_divergence(records: list[StepRecord]) -> Divergence:
                 frame_index=rec.frame_index,
                 frame_hash=rec.frame_hash,
                 frame_path=rec.evidence[0] if rec.evidence else "",
+                fault_domain=fault.domain.value,
+                fault_basis=fault.basis,
+                evidence_backed=fault.evidence_backed,
+                evidence_required=fault.evidence_required,
             )
     return Divergence()
 
