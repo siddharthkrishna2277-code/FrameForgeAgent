@@ -119,6 +119,65 @@ def disambiguate(matches: list[WindowInfo], spec: TargetSpec) -> WindowInfo | No
     )
 
 
+#: Set once, at import, before any window or capture work happens.
+#:
+#: DPI awareness must be established *before* the first window or capture call, or Windows
+#: virtualises coordinates for an unaware process: a rect reported to us and the pixels we
+#: capture can disagree by the scale factor, and a click computed from one lands in the
+#: other. On mixed-scaling hardware that is a systematically wrong click, not a rounding
+#: error.
+_DPI_AWARENESS: dict[str, object] = {"attempted": False, "active": False, "mode": None}
+
+
+def enable_dpi_awareness() -> dict[str, object]:
+    """Make this process per-monitor DPI aware. Idempotent; safe to call repeatedly.
+
+    Tries the most capable context first and falls back, because availability varies by
+    Windows build. Returns what actually happened, so the caller can report it rather than
+    assume it.
+    """
+    if _DPI_AWARENESS["attempted"]:
+        return dict(_DPI_AWARENESS)
+    _DPI_AWARENESS["attempted"] = True
+
+    # Windows 10 1703+: per-monitor v2 - the only mode that gives correct non-client
+    # rects for a window on a differently-scaled display.
+    try:
+        user32.SetProcessDpiAwarenessContext.argtypes = (ctypes.c_void_p,)
+        user32.SetProcessDpiAwarenessContext.restype = wintypes.BOOL
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):
+            _DPI_AWARENESS.update(active=True, mode="per_monitor_v2")
+            return dict(_DPI_AWARENESS)
+    except Exception:
+        pass
+
+    # Windows 8.1+: per-monitor v1.
+    try:
+        if user32.SetProcessDpiAwareness(2) == 0:      # DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE
+            _DPI_AWARENESS.update(active=True, mode="per_monitor_v1")
+            return dict(_DPI_AWARENESS)
+    except Exception:
+        pass
+
+    # Vista+: system aware. Better than nothing, but Windows still scales for us.
+    try:
+        if user32.SetProcessDPIAware() is not None:
+            _DPI_AWARENESS.update(active=True, mode="system_aware")
+            return dict(_DPI_AWARENESS)
+    except Exception:
+        pass
+
+    _DPI_AWARENESS.update(active=False, mode="unaware")
+    return dict(_DPI_AWARENESS)
+
+
+def dpi_awareness() -> dict[str, object]:
+    """Current DPI awareness state, enabling it first if nobody has."""
+    if not _DPI_AWARENESS["attempted"]:
+        return enable_dpi_awareness()
+    return dict(_DPI_AWARENESS)
+
+
 def monitor_topology_fingerprint() -> str:
     """A stable string identifying the current display arrangement.
 
@@ -133,7 +192,12 @@ def monitor_topology_fingerprint() -> str:
     try:
         adapter = PyWin32WindowAdapter()
         for m in adapter.monitors_detailed():
-            parts.append(f"{m.index}:{m.device_name}:{m.rect.as_tuple()}:{m.dpi}:{int(m.is_primary)}")
+            # DPI is part of the identity: a scaling change alters the mapping between
+            # client pixels and physical pixels, so every cached rectangle is suspect.
+            parts.append(
+                f"{m.index}:{m.device_name}:{m.rect.as_tuple()}:{m.dpi}:{m.scale_percent}"
+                f":{int(m.is_primary)}"
+            )
     except Exception:
         pass
     return "|".join(parts)

@@ -209,6 +209,9 @@ class ScenarioRunner:
         self.protected: ProtectedRegistry | None = None
         self.live_gate = None
         self.profile_spec = None
+        #: Target-scoped capture, bound to the registered session.
+        self.target_capture = None
+        self.last_capture_frame = None
         self.input_health: dict = {}
         #: Central input-state owner. Sampled before any input and reconciled after.
         self.safety: InputSafetyManager | None = None
@@ -346,6 +349,11 @@ class ScenarioRunner:
         self._apply_protected_policy()
         self.machine.observe()
 
+        # ------------------------------------------------- target-scoped capture
+        # Every frame is bound to the registered session and carries its own freshness and
+        # health, so a stale, black or mismatched capture cannot silently authorise input.
+        self._setup_target_capture()
+
         # ------------------------------------------------- controller and policy
         # The InputController is the only component permitted to emit OS input. Live runs
         # get the Windows controller behind a default-deny policy; simulated runs get the
@@ -448,6 +456,41 @@ class ScenarioRunner:
         if self._override_planner is not None:
             director.planner = self._override_planner
             self.planner_name = self._override_planner.capabilities().name
+
+    def _setup_target_capture(self) -> None:
+        """Bind the capture adapter to the registered target session."""
+        from frameforge.perception.proposal import TargetCapture
+
+        if self.target_session is None or self.wiring.capture is None:
+            return
+        self.target_capture = TargetCapture(
+            self.target_session, self.wiring.capture, self.wiring.vision)
+
+    def _refresh_capture(self):
+        """Capture the registered target and record the frame against the session."""
+        if self.target_capture is None:
+            return None
+        frame = self.target_capture.grab(self.run_id or "")
+        self.last_capture_frame = frame
+        if frame is not None and not frame.healthy:
+            # A black, frozen or unavailable capture must not be the basis of a decision.
+            if self.machine.state.value == "active":
+                self.machine.pause_safe_stop(
+                    f"target capture is unusable: {frame.health_detail}")
+        return frame
+
+    def capture_health(self) -> dict:
+        """What a report or a future GUI needs to know about perception."""
+        if self.target_capture is None:
+            return {"available": False, "reason": "no registered target session"}
+        ok, why = self.target_capture.is_fresh()
+        frame = self.target_capture.latest()
+        return {
+            "available": True,
+            "fresh": ok,
+            "detail": why,
+            "frame": frame.to_dict() if frame else None,
+        }
 
     def _input_profile(self):
         """The profile that governs live input.
@@ -568,6 +611,13 @@ class ScenarioRunner:
         if session is None:
             return Res.deny(BR.SESSION_MISSING,
                             "no target session; run with --profile so the target is registered")
+        # A fresh, target-scoped capture is a precondition for arming.
+        self._refresh_capture()
+        capture_ok, capture_why = (
+            self.target_capture.is_fresh() if self.target_capture else (False, "no capture")
+        )
+        if not capture_ok:
+            return Res.deny(BR.CAPTURE_STALE, capture_why)
         observation = self._last_observation
         if observation is None:
             return Res.deny(BR.CAPTURE_UNAVAILABLE, "no capture for the registered target")
@@ -627,6 +677,7 @@ class ScenarioRunner:
     def live_input_status(self) -> dict:
         """What the CLI and a future GUI read. Never claims more than is true."""
         status = {
+            "capture": self.capture_health(),
             "state": self.machine.state.value,
             "input_locked": self.machine.state is not ExecutionState.ACTIVE,
             "banner": self.machine.banner(),

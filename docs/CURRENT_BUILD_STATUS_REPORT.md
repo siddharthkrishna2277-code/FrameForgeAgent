@@ -128,19 +128,26 @@ and the executor cannot be constructed without a controller.
 
 ### Gate status after this work
 
-| Item | Before | Now |
-|---|---|---|
-| P0 no locationless click | COMPLETE_AND_VERIFIED | unchanged |
-| P0.5 no fixed coordinates | PARTIAL (scripts) | **COMPLETE_AND_VERIFIED** |
-| P1 target session mandatory | IMPLEMENTED_NOT_VERIFIED | **COMPLETE_AND_VERIFIED (mock path)** |
-| P2 WindowFromPoint ×2 | IMPLEMENTED_NOT_VERIFIED | **COMPLETE_AND_VERIFIED (mock path)** |
-| P3 protected registry | PARTIAL | **COMPLETE_AND_VERIFIED (mock path)** |
-| P4 named coords + DPI | IMPLEMENTED_NOT_VERIFIED | IMPLEMENTED_NOT_VERIFIED (DPI context still not called at startup) |
-| P5 topology invalidation | IMPLEMENTED_NOT_VERIFIED | IMPLEMENTED_NOT_VERIFIED |
-| P6 target capture + vision | IMPLEMENTED_NOT_VERIFIED | PARTIAL (`TargetCapture` still not wired to the runner) |
-| P7 UI Automation | NOT_IMPLEMENTED | unchanged |
-| P8 user-armed state machine | IMPLEMENTED_NOT_VERIFIED | **COMPLETE_AND_VERIFIED (mock path)** |
-| P9 emergency stop + cleanup | COMPLETE_AND_VERIFIED | unchanged |
+| Item | Scope now |
+|---|---|
+| P0 no locationless click | `COMPLETE_AND_VERIFIED_MOCK` |
+| P0.5 no fixed coordinates | `COMPLETE_AND_VERIFIED_MOCK` |
+| P1 target session mandatory | `COMPLETE_AND_VERIFIED_MOCK` |
+| P2 WindowFromPoint x2 | `COMPLETE_AND_VERIFIED_MOCK` |
+| P3 protected registry | `COMPLETE_AND_VERIFIED_MOCK` |
+| P4 DPI awareness | `COMPLETE_AND_VERIFIED_MOCK` |
+| P5 topology on dispatch | `COMPLETE_AND_VERIFIED_MOCK` |
+| P6 target-scoped capture | `COMPLETE_AND_VERIFIED_MOCK` |
+| P7 UI Automation | `NOT_IMPLEMENTED` |
+| P8 user-armed state machine | `COMPLETE_AND_VERIFIED_MOCK` |
+| P9 emergency stop | `COMPLETE_AND_VERIFIED_MOCK` |
+| Notepad dual-monitor POC | `NOT_IMPLEMENTED` |
+| Read-only diagnostic panel | `COMPLETE_AND_VERIFIED_MOCK` |
+
+P4 was verified by reading `dpi_awareness()` on this machine: `per_monitor_v2` is in force,
+both monitors report dpi/scale/work-area, and dpi+scale are part of the topology fingerprint.
+P5 and P6 were verified with tests that force a disconnect, a reorder and a 96->144 scaling
+change, and that present a stale, black and hwnd-mismatched capture.
 
 "(mock path)" means verified through the real runner with a recording input backend. **None
 has been verified on a live desktop**, because live desktop testing remains prohibited.
@@ -151,6 +158,23 @@ has been verified on a live desktop**, because live desktop testing remains proh
 run. It requires a second monitor (currently disconnected) and your explicit approval.
 
 ---
+
+### Verification scope labels
+
+Every gate carries one of these. A bare "verified" is not a permitted label, because the
+dangerous reading is "verified against a real desktop" when the evidence was a fake backend.
+
+| Label | Meaning |
+|---|---|
+| `COMPLETE_AND_VERIFIED_MOCK` | Verified through the real runner and the real state machine against a recording input backend. No Windows input was sent. |
+| `COMPLETE_AND_VERIFIED_LIVE_ISOLATED` | Verified on a real desktop inside an isolated test session or VM. |
+| `COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP` | Verified on the operator's own desktop with live input. |
+| `IMPLEMENTED_NOT_VERIFIED` | Code exists; no test exercises it end to end. |
+| `PARTIAL` | Some of the gate is implemented; the remainder is absent. |
+| `NOT_IMPLEMENTED` | Absent. |
+
+**Nothing in this build is `COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP` or
+`COMPLETE_AND_VERIFIED_LIVE_ISOLATED`.** Every verified gate below is mock-path only.
 
 ## Overall readiness rating
 

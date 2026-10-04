@@ -123,6 +123,17 @@ def run_checks(verbose: bool = False) -> list[Check]:
                 for m in topo.monitors
             )
             checks.append(Check("displays", OK, desc or "none reported"))
+            scales = {m.dpi for m in window.monitors_detailed()}
+            if len(scales) > 1:
+                checks.append(Check(
+                    "display-scaling", WARN,
+                    f"MIXED SCALING across monitors: dpi={sorted(scales)}",
+                    "a point can be correct for one display and wrong for another",
+                ))
+            else:
+                checks.append(Check(
+                    "display-scaling", OK,
+                    f"uniform {sorted(scales)[0] if scales else 'unknown'} dpi"))
             checks.append(Check(
                 "virtual desktop", INFO,
                 f"{topo.virtual_rect.width}x{topo.virtual_rect.height} at "

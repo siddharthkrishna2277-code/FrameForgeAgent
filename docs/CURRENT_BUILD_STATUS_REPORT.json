@@ -381,5 +381,79 @@
       "Notepad scenario red (8/12)",
       "single monitor connected; dual-monitor acceptance cannot run"
     ]
+  },
+  "verification_scope_legend": {
+    "COMPLETE_AND_VERIFIED_MOCK": "verified through the real runner and state machine against a recording input backend; no Windows input sent",
+    "COMPLETE_AND_VERIFIED_LIVE_ISOLATED": "verified on a real desktop in an isolated test session or VM",
+    "COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP": "verified on the operator's own desktop with live input",
+    "IMPLEMENTED_NOT_VERIFIED": "code exists; no end-to-end test",
+    "PARTIAL": "gate partly implemented",
+    "NOT_IMPLEMENTED": "absent",
+    "bare_VERIFIED_is_not_a_valid_label": true,
+    "current_build_highest_scope": "COMPLETE_AND_VERIFIED_MOCK",
+    "no_gate_claims_live_verification": true
+  },
+  "gates_with_scope": {
+    "P0_no_locationless_click": "COMPLETE_AND_VERIFIED_MOCK",
+    "P0_5_no_fixed_coordinates": "COMPLETE_AND_VERIFIED_MOCK",
+    "P1_target_session_mandatory": "COMPLETE_AND_VERIFIED_MOCK",
+    "P2_window_from_point": "COMPLETE_AND_VERIFIED_MOCK",
+    "P3_protected_window_registry": "COMPLETE_AND_VERIFIED_MOCK",
+    "P4_dpi_awareness": "COMPLETE_AND_VERIFIED_MOCK",
+    "P5_topology_on_dispatch": "COMPLETE_AND_VERIFIED_MOCK",
+    "P6_target_scoped_capture": "COMPLETE_AND_VERIFIED_MOCK",
+    "P7_ui_automation": "NOT_IMPLEMENTED",
+    "P8_user_armed_state_machine": "COMPLETE_AND_VERIFIED_MOCK",
+    "P9_emergency_stop": "COMPLETE_AND_VERIFIED_MOCK",
+    "notepad_dual_monitor_poc": "NOT_IMPLEMENTED",
+    "readonly_diagnostic_panel": "COMPLETE_AND_VERIFIED_MOCK"
+  },
+  "this_change_set": {
+    "git_initialised": true,
+    "baseline_commit": "5c680a1",
+    "p4_dpi_awareness": {
+      "verified_mode_on_this_machine": "per_monitor_v2",
+      "dpi_and_scale_in_topology_fingerprint": true,
+      "scope": "COMPLETE_AND_VERIFIED_MOCK"
+    },
+    "p5_topology_on_dispatch": {
+      "checked": "before every mouse action, not only at session creation",
+      "invalidates_on": [
+        "monitor_disconnect",
+        "monitor_reorder",
+        "resolution_change",
+        "scaling_change"
+      ],
+      "scope": "COMPLETE_AND_VERIFIED_MOCK"
+    },
+    "p6_target_capture": {
+      "wired_to": "ScenarioRunner",
+      "checks": [
+        "freshness",
+        "hwnd/pid binding",
+        "session binding",
+        "topology"
+      ],
+      "stale_black_or_mismatched_locks_input": true,
+      "scope": "COMPLETE_AND_VERIFIED_MOCK"
+    },
+    "readonly_panel": {
+      "path": "src/frameforge/ui/status_panel.py",
+      "cli": "frameforge panel [--json]",
+      "has_arm_control": false,
+      "read_only_is_structural": "no execution-path import; no interactive widget; AST-tested",
+      "scope": "COMPLETE_AND_VERIFIED_MOCK"
+    },
+    "tests": {
+      "headless_total": 562,
+      "new_p4_p5_p6": 17,
+      "new_readonly_panel": 8,
+      "result": "all pass"
+    },
+    "not_done": [
+      "Notepad POC 8/12 failures not yet triaged into safety vs OCR classes",
+      "P7 UI Automation not implemented",
+      "no live desktop validation of any kind"
+    ]
   }
 }

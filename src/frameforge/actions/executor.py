@@ -223,6 +223,17 @@ class ActionExecutor:
                 # yields no input rather than an unguarded one. The previous fallback sent
                 # straight to the port, which made the whole safety layer optional *by
                 # omission* - and omission is how a guard gets bypassed by accident.
+                # Topology is checked before every mouse primitive, not just once at
+                # session creation. A monitor disconnected or a scaling changed between
+                # planning and dispatch invalidates every cached rectangle, so the action is
+                # refused rather than computed from stale geometry.
+                if primitive.kind in (PrimitiveType.MOUSE_MOVE_ABS, PrimitiveType.MOUSE_BUTTON):
+                    if self.target_guard is not None:
+                        same, why = self.target_guard.session.refresh_topology()
+                        if not same:
+                            self._refuse_target(why, event="monitor_topology_changed")
+                            break
+
                 if primitive.kind is PrimitiveType.MOUSE_MOVE_ABS:
                     candidate = ScreenPx(primitive.x, primitive.y)
                     # Verify *before* moving as well as before the button. Moving first and

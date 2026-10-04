@@ -237,13 +237,31 @@ class TargetCapture:
         return self.frames[-1] if self.frames else None
 
     def is_fresh(self, max_age_ms: float = 750.0) -> tuple[bool, str]:
+        """Usable *and* bound to the current target.
+
+        A fresh frame of the wrong window is worse than no frame: it looks like evidence
+        and is not. The hwnd/pid/session binding is re-checked here so a target that was
+        replaced or moved cannot be judged from a stale capture of its predecessor.
+        """
         frame = self.latest()
         if frame is None:
             return False, "no capture yet"
         if frame.age_ms > max_age_ms:
-            return False, f"latest capture is {frame.age_ms:.0f}ms old"
+            return False, f"latest capture is {frame.age_ms:.0f}ms old (max {max_age_ms:.0f}ms)"
         if not frame.healthy:
             return False, frame.health_detail or "capture unhealthy"
+
+        hwnd = int(getattr(self.session, "hwnd", 0) or 0)
+        pid = int(getattr(self.session, "pid", 0) or 0)
+        if hwnd and (frame.target_hwnd != hwnd or frame.target_pid != pid):
+            return False, (
+                f"capture is for hwnd={frame.target_hwnd} pid={frame.target_pid}, "
+                f"target is hwnd={hwnd} pid={pid}"
+            )
+        expected_fp = getattr(self.session, "topology_fingerprint", "")
+        if expected_fp and frame.topology_fingerprint and \
+                frame.topology_fingerprint != expected_fp:
+            return False, "capture predates the current display topology"
         return True, ""
 
 

@@ -254,6 +254,32 @@ class TargetSession:
         point = Point(client_x, client_y)
         return any(r.contains(point) for r in self.region_rects())
 
+    def refresh_topology(self) -> tuple[bool, str]:
+        """Compare the live display layout against the one this session was registered with.
+
+        Called on every target refresh *and* immediately before dispatch. A monitor
+        disconnected, moved, re-scaled or a resolution change invalidates the session: every
+        cached rectangle, surface offset and normalised mapping computed under the old
+        layout is suspect, and a click computed from it lands somewhere the operator never
+        authorised. Returns ``(ok, reason)``.
+        """
+        if not self.topology_fingerprint:
+            return True, ""
+        try:
+            from frameforge.adapters.window.pywin32_window import monitor_topology_fingerprint
+
+            now = monitor_topology_fingerprint()
+        except Exception as exc:
+            return False, (f"could not read the display topology: "
+                           f"{type(exc).__name__}: {exc}")
+        if now != self.topology_fingerprint:
+            return False, (
+                f"display topology changed since the target was registered "
+                f"({self.topology_fingerprint} -> {now}); pending input is cancelled and "
+                "the target must be revalidated"
+            )
+        return True, ""
+
     def describe(self) -> str:
         return (f"session(run={self.run_id}, hwnd={self.hwnd}, pid={self.pid}, "
                 f"class={self.class_name!r}, client={self.client_size.as_tuple()}, "
@@ -359,6 +385,21 @@ class TargetGuard:
             return None
 
     # -------------------------------------------------------------- point checks
+
+    def refresh_topology(self) -> tuple[bool, str]:
+        """Delegate to the registered session.
+
+        Exposed on the guard as well as the session so the dispatch path has one obvious
+        thing to call before every mouse action, and so a session that cannot report its
+        topology refuses rather than being assumed unchanged.
+        """
+        session = self.session
+        if session is None:
+            return False, "no target session; live input is refused"
+        refresh = getattr(session, "refresh_topology", None)
+        if refresh is None:
+            return False, "target session cannot verify the display topology"
+        return refresh()
 
     def validate_point(self, screen_point: ScreenPx, *,
                         check_window_under_point: bool = True) -> ValidationResult:

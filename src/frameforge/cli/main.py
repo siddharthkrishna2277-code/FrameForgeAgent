@@ -27,6 +27,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", "-v", action="store_true")
     parser.add_argument("--version", action="store_true")
 
+
     sub = parser.add_subparsers(dest="command")
 
     doctor = sub.add_parser("doctor", help="report installed capabilities honestly")
@@ -130,12 +131,67 @@ def build_parser() -> argparse.ArgumentParser:
     serve.add_argument("--port", type=int, default=8756)
     serve.add_argument("--host", type=str, default="127.0.0.1")
 
+    # Read-only. Deliberately has no --arm, --confirm or --target option: the panel
+    # cannot reach the execution path, so it cannot offer a control that would.
+    panel_p = sub.add_parser("panel",
+                             help="open the read-only status panel (injects nothing)")
+    panel_p.add_argument("--json", action="store_true",
+                         help="print the same snapshot as JSON and exit (no window)")
+
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
+    # DPI awareness first, before anything reads a window rect or captures a screen.
+    # Established late, Windows virtualises coordinates and a click computed from a
+    # reported rect can land a scale factor away from where the pixels were read.
+    try:
+        from frameforge.adapters.window.pywin32_window import enable_dpi_awareness
+
+        enable_dpi_awareness()
+    except Exception:
+        pass
+
     parser = build_parser()
     args = parser.parse_args(argv)
+
+    if getattr(args, "command", None) == "panel":
+        from frameforge.ui.status_panel import main as panel_main
+
+        if getattr(args, "json", False):
+            import json
+
+            from frameforge.ui.status_panel import GATE_REGISTER, SCOPE_NOTE
+
+            print(json.dumps({
+                "read_only": True,
+                "has_arm_control": False,
+                "input_locked": True,
+                "gates": [{"gate": g.name, "scope": g.scope, "evidence": g.evidence}
+                          for g in GATE_REGISTER],
+                "scope_legend": SCOPE_NOTE,
+            }, indent=2))
+            return 0
+        return panel_main()
+
+    if getattr(args, "command", None) == "panel":
+        from frameforge.ui.status_panel import main as panel_main
+
+        if getattr(args, "json", False):
+            import json
+
+            from frameforge.ui.status_panel import GATE_REGISTER, SCOPE_NOTE
+
+            print(json.dumps({
+                "read_only": True,
+                "has_arm_control": False,
+                "input_locked": True,
+                "gates": [{"gate": g.name, "scope": g.scope, "evidence": g.evidence}
+                          for g in GATE_REGISTER],
+                "scope_legend": SCOPE_NOTE,
+            }, indent=2))
+            return 0
+        return panel_main()
 
     if args.version:
         from frameforge import __version__

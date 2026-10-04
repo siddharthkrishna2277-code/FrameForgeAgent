@@ -90,12 +90,32 @@ class FakeWorld:
         self.windows[(hwnd, pid)]["rect"] = rect
 
 
+class _StubSession:
+    """The minimal session surface TargetGuard reads.
+
+    ``refresh_topology`` exists because the executor now calls it before every mouse
+    primitive (P5). Without it the pre-move check raises and refuses *everything*, which
+    looks like the gate being too strict rather than a test double being incomplete.
+    """
+
+    def __init__(self, session) -> None:
+        self._inner = session
+
+    def __getattr__(self, item):
+        return getattr(self._inner, item)
+
+    def refresh_topology(self) -> tuple[bool, str]:
+        return True, ""
+
+
 class FakeGuard(TargetGuard):
     """A TargetGuard driven by ``FakeWorld`` instead of Win32."""
 
     def __init__(self, world: FakeWorld, session, desktop=DESKTOP) -> None:
-        super().__init__(session=session, desktop=desktop)
+        super().__init__(session=_StubSession(session), desktop=desktop)
         self.world = world
+        #: Tests set this to force a topology mismatch.
+        self.topology_mismatch = False
 
     def validate_point(self, screen_point: ScreenPx, *, check_window_under_point: bool = True):
         from frameforge.actions.target import ValidationResult
@@ -107,15 +127,12 @@ class FakeGuard(TargetGuard):
             return ValidationResult(Verdict.EXPIRED, "expired")
         # A topology change invalidates every cached rectangle, surface offset and
         # normalised mapping, so pending input must be cancelled and revalidated.
-        if self.topology_fingerprint:
-            from frameforge.adapters.window.pywin32_window import monitor_topology_fingerprint
-
-            if monitor_topology_fingerprint() != self.topology_fingerprint:
-                return ValidationResult(
-                    Verdict.TOPOLOGY_CHANGED,
-                    "display topology changed since the session was registered; pending "
-                    "input must be cancelled and the target revalidated",
-                )
+        if self.topology_mismatch:
+            return ValidationResult(
+                Verdict.TOPOLOGY_CHANGED,
+                "display topology changed since the session was registered; pending "
+                "input must be cancelled and the target revalidated",
+            )
         rect = s.client_rect
         cx = screen_point.x - rect.x
         cy = screen_point.y - rect.y
@@ -335,8 +352,8 @@ class TestAcceptanceDTopologyChangeCancels:
         executor = make_executor(world, session, port)
         guard = executor.target_guard
 
-        # Simulate an arrangement change by altering the recorded fingerprint.
-        guard.topology_fingerprint = "vd=0,0,1920,1080|only-one-monitor"
+        # Simulate an arrangement change (a monitor disconnected, resolution or scale moved).
+        guard.topology_mismatch = True
         before = len(emitted(executor))
         executor.execute(_click_at(ScreenPx(2880, 540), "left"))
         assert len(emitted(executor)) == before, "input was dispatched after a topology change"
