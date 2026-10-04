@@ -426,10 +426,12 @@ class ActionCompiler:
                        "Use method='unicode', or bind an intent.")
                 raise ValueError(msg)
             prims.append(
-                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode, down=True,
+                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode,
+                          scancode_key=key, down=True,
                           hold_ms=a.interval_ms or 12))
             prims.append(
-                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode, down=False))
+                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode,
+                          scancode_key=key, down=False))
         return CompiledAction(a, prims, a.blast())
 
     def _compile_gamepad_button(self, a: GamepadButton) -> CompiledAction:

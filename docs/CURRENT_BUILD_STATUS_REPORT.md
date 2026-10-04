@@ -277,6 +277,51 @@ the module and in the basis line a human reads.
 Applies from P7 onward: any new verifier inherits the rule by calling `classify_failure`
 rather than inventing its own failure taxonomy.
 
+## Live POC preflight (dry-run) — the runnable claim, verified
+
+The live POC still requires explicit approval. Everything short of the injection boundary
+was exercised for real against the actual Notepad window, using `run --dry-run`, which wires
+the entire pipeline and injects nothing.
+
+**Run `ff-20261004-145327-141e10`** — real `notepad.exe`, real launch, real acquisition:
+
+| Check | Result |
+|---|---|
+| `doctor` | 0 BAD; uniform 96 dpi across 2 monitors; active session; 3840x1080 virtual desktop |
+| target acquired | `Notepad.exe[21728] 'Notepad' '*ww - Notepad' hwnd=3017096` |
+| readiness landmark | `menu_file` matched, score 1.000 |
+| save-prompt gate | asserted absent |
+| all 5 interactive actions reached the guard | KeyPress, Click, type_text, Hotkey, KeyPress |
+| primitives dispatched | 12 |
+| **primitives delivered to OS** | **0** |
+| verdict | 7 pass / 2 fail (expected: no input, so the text is correctly absent) |
+| `first_divergence.fault_domain` | `undetermined`, `evidence_backed: false` |
+
+The run reaching completion with 12 dispatched and 0 delivered is the proof that the POC is
+runnable end to end, and that the audit trail now says truthfully what happened.
+
+### Three silent gaps the preflight exposed
+
+1. **`PrimitiveType.UNICODE` had no declarative action.** The executor refuses any primitive
+   it cannot describe, so *all* unicode-mode typing was refused as `undeclarable_primitive`.
+   No text could reach any target. The Notepad profile had just been moved to `unicode`, so
+   this would have failed again on the next run — for a different reason, still silently.
+2. **`PrimitiveType.SCANCODE` had no declarative action either** — the primitive added for
+   the scancode fix was permanently unauthorisable, which would have made scan mode useless
+   for exactly the game surfaces it exists to serve.
+3. **The audit trail's `sent` field meant "dispatched", not "delivered."** A `--dry-run`
+   reported `"sent": 12` while guaranteeing nothing reached Windows. Anyone auditing
+   "did input reach the operator's machine" would have read the opposite of the truth.
+
+All three are fixed. `ToolResult.delivered` carries the true count from `send_batch`, and
+the audit records `dispatched` and `delivered_to_os` as separate facts. A test walks every
+`PrimitiveType` and fails if one lacks a declarative action, so the next kind cannot be added
+without one.
+
+**Scope of this preflight: `COMPLETE_AND_VERIFIED_MOCK` for the guard path, and a real
+acquisition of the real Notepad window. It is NOT live input, and it does not verify the
+typed-text round trip.**
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

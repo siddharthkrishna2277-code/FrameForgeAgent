@@ -617,7 +617,12 @@ class RunDirector:
                 "compiled": compiled.describe(),
                 "blast": str(compiled.blast),
                 "primitives": [p.describe() for p in compiled.primitives],
-                "sent": result.primitives_sent,
+                # Two distinct facts. "dispatched" is how many primitives the executor
+                # forwarded; "delivered_to_os" is how many the port confirmed. In
+                # --dry-run the first is non-zero and the second is zero, and a reader
+                # must be able to tell that apart at a glance.
+                "dispatched": result.primitives_sent,
+                "delivered_to_os": result.delivered_to_os,
                 "blocked": result.blocked_reason,
                 "duration_ms": round(result.duration_ms, 2),
                 "mono_ms": round(self.clock.monotonic_ms(), 2),
@@ -630,13 +635,18 @@ class RunDirector:
             })
             if intent_record is not None:
                 intent_record["status"] = result.outcome
-                intent_record["primitives_sent"] = result.primitives_sent
+                intent_record["dispatched"] = result.primitives_sent
+                intent_record["delivered_to_os"] = result.delivered_to_os
                 intent_record["reconciled_mono_ms"] = round(self.clock.monotonic_ms(), 2)
             self._event(
                 EventKind.ACTION_EXECUTED,
                 compiled.describe(),
                 step=step.get("name", ""), action=action.describe(),
-                blast=str(compiled.blast), sent=result.primitives_sent,
+                blast=str(compiled.blast),
+                # Both facts, always. "sent" alone read as "reached the operator's desktop",
+                # which is false for every dry run and every disarmed port.
+                dispatched=result.primitives_sent,
+                delivered_to_os=result.delivered_to_os,
                 blocked=result.blocked_reason,
             )
             if result.blocked_reason:

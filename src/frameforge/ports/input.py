@@ -199,6 +199,10 @@ class Primitive:
     kind: PrimitiveType
     #: Hardware scancode for SCANCODE primitives; 0 for every other kind.
     scancode: int = 0
+    #: The key a SCANCODE primitive stands for. The scancode is what Windows receives; this
+    #: is what the policy layer reasons about, and it must be present or the primitive has
+    #: no declarative action and cannot be authorised.
+    scancode_key: Key | None = None
     x: int = 0
     y: int = 0
     dx: int = 0

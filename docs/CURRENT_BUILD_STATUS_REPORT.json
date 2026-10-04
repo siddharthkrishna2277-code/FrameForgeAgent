@@ -405,8 +405,9 @@
     "P7_ui_automation": "NOT_IMPLEMENTED",
     "P8_user_armed_state_machine": "COMPLETE_AND_VERIFIED_MOCK",
     "P9_emergency_stop": "COMPLETE_AND_VERIFIED_MOCK",
-    "notepad_dual_monitor_poc": "NOT_IMPLEMENTED",
-    "readonly_diagnostic_panel": "COMPLETE_AND_VERIFIED_MOCK"
+    "notepad_dual_monitor_poc": "IMPLEMENTED_NOT_VERIFIED",
+    "readonly_diagnostic_panel": "COMPLETE_AND_VERIFIED_MOCK",
+    "live_poc_preflight": "COMPLETE_AND_VERIFIED_MOCK"
   },
   "this_change_set": {
     "git_initialised": true,
@@ -535,5 +536,52 @@
       "enforced_by": "tests/integration/test_pipeline.py::test_report_is_schema_shaped_and_actionable"
     },
     "applies_from": "P7 onward; new verifiers must call classify_failure rather than invent a taxonomy"
+  },
+  "live_poc_preflight": {
+    "method": "run --dry-run: full pipeline wired, zero input injected",
+    "run_id": "ff-20261004-145327-141e10",
+    "doctor": {
+      "bad_count": 0,
+      "dpi": "uniform 96 across 2 monitors",
+      "session": "active",
+      "virtual_desktop": "3840x1080"
+    },
+    "target_acquired": {
+      "pid": 21728,
+      "title": "*ww - Notepad",
+      "hwnd": 3017096
+    },
+    "readiness_landmark": "menu_file score=1.000",
+    "actions_reaching_the_guard": [
+      "KeyPress",
+      "Click",
+      "type_text",
+      "Hotkey",
+      "KeyPress"
+    ],
+    "primitives_dispatched": 12,
+    "primitives_delivered_to_os": 0,
+    "counts": {
+      "pass": 7,
+      "fail": 2
+    },
+    "fail_expected_because": "dry-run injects nothing, so the typed text is correctly absent",
+    "first_divergence": {
+      "fault_domain": "undetermined",
+      "evidence_backed": false
+    },
+    "silent_gaps_found_and_fixed": [
+      "PrimitiveType.UNICODE had no declarative action, so ALL unicode typing was refused as undeclarable_primitive",
+      "PrimitiveType.SCANCODE had no declarative action, so the new scancode primitive was unauthorisable",
+      "the audit trail's 'sent' field counted dispatched primitives, not OS delivery, so a dry-run reported 'sent: 12'"
+    ],
+    "fixes": [
+      "UNICODE describes as TypeText",
+      "SCANCODE describes as KeyPress via a new scancode_key field carried on the primitive",
+      "ToolResult.delivered carries the true count from send_batch; audit reports dispatched and delivered_to_os separately",
+      "a test walks every PrimitiveType and fails if one lacks a declarative action"
+    ],
+    "scope": "COMPLETE_AND_VERIFIED_MOCK for the guard path; real acquisition of the real Notepad window; NOT live input",
+    "does_not_verify": "the typed-text round trip"
   }
 }

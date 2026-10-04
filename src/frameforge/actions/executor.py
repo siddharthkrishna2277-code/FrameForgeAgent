@@ -49,7 +49,13 @@ class ExecutionResult:
     #: three primitives then blocked on the fourth* - and a caller reading the first as
     #: "no action taken" would file a bug report describing the wrong event. Adopted from
     #: dsh's defensive-patterns rule "report orthogonal outcomes independently".
+    #: Primitives dispatched by the executor. This is NOT a count of events that reached
+    #: Windows: the port may still withhold them (dry-run, disarmed, or a backend refusal),
+    #: and in --dry-run every one of these is still counted here while none is delivered.
+    #: Read ``delivered_to_os`` for that claim.
     primitives_sent: int = 0
+    #: Primitives the port confirmed as actually delivered to the OS.
+    delivered_to_os: int = 0
     duration_ms: float = 0.0
     #: Set when policy or a guard refused the action.
     blocked_reason: str | None = None
@@ -197,6 +203,7 @@ class ActionExecutor:
         # ExecutionResult, and an unbound local on one of those paths would replace a
         # truthful "denied" with an UnboundLocalError.
         sent = 0
+        delivered = 0
         self._last_error = None
         self.blocked_reason = None
 
@@ -325,6 +332,10 @@ class ActionExecutor:
                 if not outcome.ok:
                     self._input.set_enabled(False, thorough=False)
                     raise FrameForgeError(outcome.detail or "controller refused action")
+                # Counted from the controller's own result, not from reaching this line:
+                # a dry-run or disarmed port accepts the primitive and still withholds it,
+                # so "dispatched" and "delivered" are different facts.
+                delivered += int(getattr(outcome, "delivered", 0) or 0)
                 # Keyboard input must clear the same gate as mouse input.
                 #
                 # Keyboard events have no point, so validate_point cannot apply - but the
@@ -408,6 +419,7 @@ class ActionExecutor:
             # blocked" is exactly the conflation dsh's defensive-patterns warns about: a
             # caller reads a cut-short run as a clean success.
             primitives_sent=sent,
+        delivered_to_os=delivered,
             duration_ms=duration,
             blocked_reason=blocked,
             denied=denied,
@@ -497,12 +509,22 @@ class ActionExecutor:
             MoveMouse,
             MouseLook,
             Scroll,
+            TypeText,
         )
         from frameforge.ports.input import PrimitiveType
 
         kind = primitive.kind
         if kind is PrimitiveType.KEY and primitive.key is not None:
             return KeyPress(key=primitive.key)
+        if kind is PrimitiveType.SCANCODE:
+            # Scan-mode typing arrives as scancode primitives with no Key attached. It
+            # describes the same declarative action as the key press it stands for, so it
+            # must clear the same policy check - otherwise adding real scancode support
+            # would have silently made scan-mode input unauthorisable.
+            key = getattr(primitive, "scancode_key", None)
+            if key is None:
+                return None
+            return KeyPress(key=key)
         if kind is PrimitiveType.MOUSE_MOVE_ABS:
             # A move carries the point a following button will use; remember it so the
             # button primitive can be described as an anchored Click rather than a
@@ -532,6 +554,14 @@ class ActionExecutor:
             return MouseLook(dx=primitive.dx, dy=primitive.dy)
         if kind is PrimitiveType.SCROLL:
             return Scroll(dx=primitive.scroll_x, dy=primitive.scroll_y)
+        if kind is PrimitiveType.UNICODE:
+            # A unicode primitive carries a whole string, not one key, so it describes a
+            # TypeText rather than a KeyPress. This case was missing entirely, which made
+            # *all* unicode-mode typing unauthorisable: the policy refused it as
+            # "undeclarable" and no text could ever reach a target.
+            if not primitive.text:
+                return None
+            return TypeText(text=primitive.text, method="unicode")
         # Anything unrecognised returns None, and the policy refuses it.
         return None
 

@@ -207,6 +207,13 @@ class ToolResult:
     duration_ms: float = 0.0
     held_after: tuple[str, ...] = ()
     cleanup_required: bool = False
+    #: Primitives the port confirmed as actually delivered to the OS.
+    #:
+    #: Distinct from ``ok``. A dry-run or disarmed port accepts the primitive and withholds
+    #: it, so ``ok=True`` with ``delivered=0`` is a normal, truthful outcome - and an audit
+    #: trail that conflated the two would report input reaching the operator's desktop when
+    #: none did.
+    delivered: int = 0
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -215,6 +222,7 @@ class ToolResult:
             "reason": self.reason.value if self.reason else None,
             "duration_ms": round(self.duration_ms, 2),
             "held_after": list(self.held_after),
+            "delivered": self.delivered,
             "cleanup_required": self.cleanup_required,
         }
 
@@ -525,11 +533,14 @@ class WindowsInputController(InputController):
         held = self._safety.held
         result = ToolResult(
             ok=True, action_id=request.action_id,
+            # "executed" means the port accepted and delivered. A dry-run or disarmed port
+            # returns 0, which is a truthful "blocked", not a silent success.
             outcome="executed" if sent else "blocked",
-            detail=f"{sent} primitive(s)",
+            detail=f"{sent} primitive(s) delivered",
             duration_ms=(time.perf_counter() - t0) * 1000.0,
             held_after=held,
             cleanup_required=bool(held),
+            delivered=sent,
         )
         self.history.append(result)
         return result
