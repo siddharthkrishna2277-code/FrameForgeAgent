@@ -1,0 +1,36 @@
+{
+  "scenario_id": "testbed_healthbar_bug",
+  "name": "testbed_healthbar_bug",
+  "objective": "Verify the health bar renders while HP is low. EXPECTED TO FAIL when the seeded defect is active.",
+  "description": "The canary. The testbed hides the health bar when HP < 30; this scenario asserts it is visible. A QA tool that cannot find a known planted defect has not been shown to work. Run the testbed with --bug healthbar --hp 20 and this scenario must report FAIL with the divergence pointing at this step.",
+  "build_id": "buggy",
+  "launch_mode": "attach",
+  "seed": 0,
+  "tags": ["qa", "canary", "expected-fail"],
+
+  "steps": [
+    {
+      "name": "confirm_in_gameplay",
+      "kind": "assert",
+      "verify": "anchor_visible",
+      "verify_args": { "anchor": "hud_hp" }
+    },
+    {
+      "name": "healthbar_visible_while_low_hp",
+      "kind": "assert",
+      "verify": "anchor_visible",
+      "verify_args": { "anchor": "healthbar_label" },
+      "description": "Fails when the seeded defect is active. This is the intended, correct behaviour."
+    }
+  ],
+
+  "assertions": [],
+
+  "evidence": {
+    "capture_on_failure": true,
+    "include_ocr_text_in_report": true,
+    "max_run_mb": 50
+  },
+
+  "metadata": { "author": "frameforge", "phase": "P4-proof-of-value", "expected_to_fail": true }
+}

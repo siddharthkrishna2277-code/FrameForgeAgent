@@ -1,0 +1,150 @@
+{
+  "scenario_id": "notepad_document_roundtrip",
+  "name": "notepad_document_roundtrip",
+  "objective": "Prove Frame Forge can drive a third-party Windows application it did not build: type into a document, confirm the text is on screen, then clear it and confirm it is gone.",
+  "description": "The universality canary. Every other scenario runs against the Frame Forge testbed. This one runs against Microsoft Notepad - software with an author, a UI Frame Forge knows nothing about, and a profile authored purely from an OCR read of the live window. Nothing is ever saved. Three lessons from the first run are baked in: the probe marker is alphanumeric because OCR renders an underscore as a space; the click into the document has no screen_changed postcondition because clicking empty space legitimately changes no pixels; and the typing step is not retried because typing is not idempotent.",
+  "build_id": "n/a-third-party",
+  "launch_mode": "direct",
+  "seed": 0,
+  "tags": [
+    "third-party",
+    "canary",
+    "universality",
+    "no-save"
+  ],
+  "steps": [
+    {
+      "name": "notepad_ready",
+      "kind": "assert",
+      "description": "The File menu entry is present, so the window is a real, rendered Notepad.",
+      "verify": "anchor_visible",
+      "verify_args": {
+        "anchor": "menu_file"
+      }
+    },
+    {
+      "name": "no_save_prompt_is_showing",
+      "kind": "assert",
+      "description": "A safety precondition, not a formality. If a modal save prompt is on screen the run stops here rather than pressing anything near it.",
+      "verify": "anchor_absent",
+      "verify_args": {
+        "anchor": "save_prompt"
+      }
+    },
+    {
+      "name": "type_probe_text",
+      "kind": "interact",
+      "description": "Type a unique marker, appending to whatever buffer Notepad restored. Appending rather than replacing is deliberate: Notepad restores its last session from an app-container file Frame Forge cannot read, so asserting an empty buffer on entry would make the run depend on state outside its control. The round trip is proven on the marker instead. Not retried - typing is not idempotent.",
+      "action": {
+        "kind": "type",
+        "text": "FFPROBE7421X",
+        "idempotent": false
+      },
+      "retryable": false,
+      "verify": "text_matches",
+      "verify_args": {
+        "pattern": "FFPROBE7421"
+      },
+      "attempts": 1,
+      "settle_ms": 600
+    },
+    {
+      "name": "probe_text_visible",
+      "kind": "assert",
+      "description": "Independent confirmation that the keystrokes reached the screen.",
+      "verify": "text_matches",
+      "verify_args": {
+        "pattern": "FFPROBE7421"
+      }
+    },
+    {
+      "name": "clear_the_document",
+      "kind": "interact",
+      "description": "Select all and delete. Verified with 'always' rather than a pixel diff: select-all highlights existing text, and on an already-empty document it changes nothing at all - a correct outcome, not a failure.",
+      "action": {
+        "kind": "hotkey",
+        "keys": [
+          "lctrl",
+          "a"
+        ]
+      },
+      "verify": "always",
+      "attempts": 1,
+      "settle_ms": 400
+    },
+    {
+      "name": "delete_selection",
+      "kind": "interact",
+      "action": {
+        "kind": "key",
+        "key": "delete"
+      },
+      "verify": "text_absent",
+      "verify_args": {
+        "pattern": "FFPROBE7421"
+      },
+      "attempts": 2,
+      "settle_ms": 500
+    },
+    {
+      "name": "probe_text_cleared",
+      "kind": "assert",
+      "description": "The round trip is complete: what went in came out. Pre-existing text from a restored session may remain - proving the *marker* is gone is the claim Frame Forge can actually make.",
+      "verify": "text_absent",
+      "verify_args": {
+        "pattern": "FFPROBE7421"
+      }
+    }
+  ],
+  "assertions": [],
+  "evidence": {
+    "capture_key_frames": true,
+    "capture_on_failure": true,
+    "include_ocr_text_in_report": true,
+    "max_run_mb": 40
+  },
+  "metadata": {
+    "author": "frameforge",
+    "third_party_target": true,
+    "never_saves": true,
+    "ocr_robustness_note": "The probe marker is deliberately alphanumeric. WinRT OCR renders an underscore as a space in a proportional font, so a marker containing one cannot be asserted on reliably. Asserting on OCR-rendered punctuation is a brittleness trap.",
+    "setup_note": "Setup steps exist so a scenario can establish a known starting state. They are best-effort: a failure is recorded but does not fail the run, because a scenario may already be in the desired state.",
+    "save_safety": "No step in this scenario can save. The save prompt is asserted *absent* before any input is sent, Ctrl+N (which triggers the prompt on a dirty restored document) is deliberately unused, and 'save' is in the profile's forbidden_intents. The scenario edits an in-memory buffer that is never written to disk."
+  },
+  "setup": [
+    {
+      "name": "dismiss_any_open_menu",
+      "description": "A menu left open by an earlier run covers the pixels the run reads. Escape also activates and closes the menu bar.",
+      "action": {
+        "kind": "key",
+        "key": "escape"
+      },
+      "verify": "always",
+      "attempts": 1,
+      "settle_ms": 300
+    },
+    {
+      "name": "focus_the_editor",
+      "description": "Click into the document body so keystrokes land in the editor. The point sits well below the tab strip and formatting toolbar, whose height varies between Notepad builds.",
+      "action": {
+        "kind": "click",
+        "at": [
+          400,
+          450
+        ]
+      },
+      "verify": "always",
+      "attempts": 1,
+      "settle_ms": 300
+    }
+  ],
+  "allow_direct_launch": true,
+  "launch": {
+    "executable": "C:\\Windows\\System32\\notepad.exe",
+    "args": [],
+    "ready_landmark": "menu_file",
+    "timeout_ms": 25000,
+    "rationale": "Notepad ships with Windows and is the reference third-party target. Launching it directly makes the scenario self-sufficient; attaching to a manually started instance remains the default and is still exercised by every other scenario."
+  },
+  "setup_note": "Setup steps establish a known starting state; failures are recorded but do not fail the run."
+}

@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "name": "testbed",
+  "display_name": "FrameForge Testbed",
+  "description": "Frame Forge's own reference target. Deterministic, instrumented, with a seedable defect.",
+  "authorized_use": {
+    "basis": "owner_prototype",
+    "attestation": "Frame Forge's own testbed application, written by this project for its own QA harness.",
+    "attested_by": "project owner",
+    "offline": true,
+    "as_of": "2026-10-03"
+  },
+  "target": {
+    "title_regex": "FrameForge Testbed",
+    "class_name": "TkTopLevel",
+    "process_name": "python.exe",
+    "require_visible": true,
+    "require_foreground": false
+  },
+  "control_preset": "ui",
+  "reference_size": [
+    1280,
+    720
+  ],
+  "viewport": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "landmarks": [
+    {
+      "name": "menu_title",
+      "kind": "text",
+      "pattern": "FRAMEFORGE TESTBED",
+      "threshold": 0.5
+    },
+    {
+      "name": "btn_start",
+      "kind": "text",
+      "pattern": "^START GAME$",
+      "threshold": 0.5
+    },
+    {
+      "name": "btn_settings",
+      "kind": "text",
+      "pattern": "^SETTINGS$",
+      "threshold": 0.5
+    },
+    {
+      "name": "btn_quit",
+      "kind": "text",
+      "pattern": "^QUIT$",
+      "threshold": 0.5
+    },
+    {
+      "name": "loading_label",
+      "kind": "text",
+      "pattern": "^LOADING$",
+      "threshold": 0.5
+    },
+    {
+      "name": "hud_score",
+      "kind": "text",
+      "pattern": "^SCORE \\d+$",
+      "threshold": 0.5
+    },
+    {
+      "name": "hud_hp",
+      "kind": "text",
+      "pattern": "^HP \\d+$",
+      "threshold": 0.5
+    },
+    {
+      "name": "healthbar_label",
+      "kind": "text",
+      "pattern": "^HEALTHBAR$",
+      "threshold": 0.5
+    },
+    {
+      "name": "minimap_label",
+      "kind": "text",
+      "pattern": "^MINIMAP$",
+      "threshold": 0.5
+    },
+    {
+      "name": "error_dialog",
+      "kind": "text",
+      "pattern": "^ERROR$",
+      "threshold": 0.5
+    },
+    {
+      "name": "dialog_dismiss_hint",
+      "kind": "text",
+      "pattern": "PRESS ENTER TO CONTINUE",
+      "threshold": 0.5
+    },
+    {
+      "name": "accent_probe",
+      "kind": "color",
+      "probe": {
+        "hue": 205,
+        "saturation": 100,
+        "value": 255,
+        "hue_tol": 18,
+        "sat_tol": 70,
+        "val_tol": 70,
+        "min_ratio": 0.0008
+      },
+      "threshold": 0.5
+    }
+  ],
+  "ready_landmarks": [
+    "menu_title"
+  ],
+  "loading_landmarks": [
+    "loading_label"
+  ],
+  "allowed_intents": [
+    "confirm",
+    "back",
+    "menu",
+    "pause",
+    "click"
+  ],
+  "forbidden_intents": [
+    "print",
+    "save",
+    "save_as",
+    "close",
+    "quit"
+  ],
+  "allow_irreversible": false,
+  "denied_process_names": [],
+  "metadata": {
+    "owner": "frameforge",
+    "fixture": true
+  }
+}

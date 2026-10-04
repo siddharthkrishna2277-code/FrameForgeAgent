@@ -1,0 +1,139 @@
+{
+  "schema_version": 1,
+  "name": "notepad",
+  "display_name": "Windows Notepad",
+  "description": "Microsoft Notepad (Win11 build). Authored against a real running window: every landmark below came from an actual OCR read of the live client area, not from guesswork. This is the reference profile for a third-party application Frame Forge did not build.",
+  "authorized_use": {
+    "basis": "supervised_accessibility",
+    "attestation": "The owner's own Windows installation, offline, for supervised QA of the automation system itself. No file is ever saved, overwritten, or closed by any shipped scenario.",
+    "attested_by": "project owner",
+    "offline": true,
+    "as_of": "2026-10-03"
+  },
+  "target": {
+    "class_name": "Notepad",
+    "process_name": "Notepad.exe",
+    "require_visible": true,
+    "require_foreground": false
+  },
+  "control_preset": "ui",
+  "reference_size": [
+    1140,
+    684
+  ],
+  "viewport": [
+    0.0,
+    0.0,
+    1.0,
+    1.0
+  ],
+  "landmarks": [
+    {
+      "name": "tab_title",
+      "kind": "text",
+      "pattern": "^Untitled",
+      "threshold": 0.5,
+      "description": "The unsaved-document tab. Its presence is how a scenario knows it is pointed at a scratch buffer rather than the user's own open file."
+    },
+    {
+      "name": "menu_file",
+      "kind": "text",
+      "pattern": "^File$",
+      "region": {
+        "x": 0.0,
+        "y": 0.06,
+        "width": 0.1,
+        "height": 0.06,
+        "unit": "norm"
+      },
+      "threshold": 0.5
+    },
+    {
+      "name": "menu_edit",
+      "kind": "text",
+      "pattern": "^Edit$",
+      "region": {
+        "x": 0.0,
+        "y": 0.06,
+        "width": 0.16,
+        "height": 0.06,
+        "unit": "norm"
+      },
+      "threshold": 0.5
+    },
+    {
+      "name": "menu_view",
+      "kind": "text",
+      "pattern": "^View$",
+      "region": {
+        "x": 0.0,
+        "y": 0.06,
+        "width": 0.24,
+        "height": 0.06,
+        "unit": "norm"
+      },
+      "threshold": 0.5
+    },
+    {
+      "name": "document_area",
+      "kind": "color",
+      "probe": {
+        "hue": 0.0,
+        "saturation": 0.0,
+        "value": 46.0,
+        "hue_tol": 180.0,
+        "sat_tol": 30.0,
+        "val_tol": 22.0,
+        "min_ratio": 0.25
+      },
+      "region": {
+        "x": 0.02,
+        "y": 0.16,
+        "width": 0.96,
+        "height": 0.78,
+        "unit": "norm"
+      },
+      "threshold": 0.5,
+      "description": "The document body. A colour probe rather than a template: the body is a large uniform field whose exact colour is stable, which is exactly the case a colour probe is good at and a template is not."
+    },
+    {
+      "name": "save_prompt",
+      "kind": "text",
+      "pattern": "Do you want to save changes",
+      "threshold": 0.4,
+      "description": "Notepad's modal 'Do you want to save changes?' dialog. Declared so a scenario can assert it is ABSENT before sending any input - that assertion is what guarantees Frame Forge cannot press Save on the user's behalf."
+    }
+  ],
+  "ready_landmarks": [
+    "menu_file",
+    "menu_edit"
+  ],
+  "loading_landmarks": [],
+  "allowed_intents": [
+    "confirm",
+    "back",
+    "select_all",
+    "delete",
+    "cancel"
+  ],
+  "forbidden_intents": [
+    "save",
+    "print",
+    "close",
+    "save_as",
+    "quit",
+    "new_document"
+  ],
+  "allow_irreversible": true,
+  "denied_process_names": [],
+  "metadata": {
+    "owner": "frameforge",
+    "third_party": true,
+    "landmarks_authored_from": "live OCR read of the running window, scripts/probe_notepad.py",
+    "allow_irreversible_note": "Granted solely so a QA scenario may type into the document buffer. TypeText is classified C3 (text lands somewhere it cannot be undone by us). No shipped scenario may save, print, or close a document; the relevant intents are in forbidden_intents and no scenario binds Ctrl+S.",
+    "safety_note": "Scenarios must target a tab matching 'Untitled'. The tab_title landmark exists so a scenario can assert it is pointed at a scratch buffer, never at the user's own open file.",
+    "identity_note": "Identity is the window (class + process), deliberately not the document title. Notepad restores its previous session on launch, so a freshly started instance may open the previously used file rather than a blank document - and a title-anchored target simply never appears. Window identity and document identity are different things, and only the former belongs in a TargetSpec. Which document is active is an assertion, not an identity.",
+    "text_method_note": "Declared 'scan' because Notepad's editor is a Win32 EDIT control that reads raw key events. The shared 'ui' preset defaults to 'unicode', which that control ignores - found because the first live run typed nothing at all and the report said so plainly."
+  },
+  "text_method": "scan"
+}

@@ -1,0 +1,96 @@
+{
+  "scenario_id": "testbed_smoke",
+  "name": "testbed_smoke",
+  "objective": "Navigate the testbed menu, reach gameplay, and confirm the HUD is present.",
+  "description": "First proof-of-value scenario. Drives the testbed purely through its visible UI using only keyboard input, then asserts on visible landmarks.",
+  "build_id": "dev",
+  "commit": "",
+  "launch_mode": "attach",
+  "seed": 0,
+  "tags": [
+    "smoke",
+    "testbed",
+    "no-ai"
+  ],
+  "steps": [
+    {
+      "name": "menu_is_present",
+      "kind": "assert",
+      "require": [
+        "menu_title"
+      ],
+      "verify": "anchor_visible",
+      "verify_args": {
+        "anchor": "menu_title"
+      },
+      "attempts": 1
+    },
+    {
+      "name": "select_start",
+      "kind": "interact",
+      "require": [
+        "menu_title",
+        "btn_start"
+      ],
+      "expect": [
+        "loading_label"
+      ],
+      "action": {
+        "kind": "key",
+        "key": "enter"
+      },
+      "verify": "screen_changed",
+      "attempts": 2,
+      "settle_ms": 400
+    },
+    {
+      "name": "wait_for_gameplay",
+      "kind": "settle",
+      "require": [
+        "loading_label"
+      ],
+      "expect": [
+        "hud_score"
+      ],
+      "action": {
+        "kind": "none"
+      },
+      "verify": "anchor_visible",
+      "verify_args": {
+        "anchor": "hud_score"
+      },
+      "attempts": 5,
+      "settle_ms": 800,
+      "timeout_ms": 15000
+    },
+    {
+      "name": "hud_score_present",
+      "kind": "assert",
+      "verify": "anchor_visible",
+      "verify_args": {
+        "anchor": "hud_score"
+      },
+      "attempts": 1
+    },
+    {
+      "name": "minimap_present",
+      "kind": "assert",
+      "verify": "anchor_visible",
+      "verify_args": {
+        "anchor": "minimap_label"
+      },
+      "attempts": 1
+    }
+  ],
+  "assertions": [],
+  "evidence": {
+    "capture_key_frames": true,
+    "capture_on_failure": true,
+    "include_ocr_text_in_report": true,
+    "max_run_mb": 50
+  },
+  "metadata": {
+    "author": "frameforge",
+    "phase": "P4-proof-of-value"
+  }
+}

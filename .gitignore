@@ -1,0 +1,113 @@
+# Secrets and credentials
+# Never commit a key. Frame Forge reads API keys from the environment only, but a stray
+# .env is the most common way one ends up in a repository history - and history is
+# permanent, so a single commit here is a permanent leak.
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.pfx
+secrets.json
+credentials.json
+.codex/
+.hermes/
+
+# Machine-specific configuration
+# Profiles declare authorisation attestations and expected executable paths; those are
+# per-machine. Local overrides must not be shared.
+frameforge.local.json
+profiles/*.local.json
+profiles/*.local.yaml
+profiles/*.local.yml
+config.local.json
+settings.local.json
+
+# Run artefacts: evidence bundles, captures, video, reports
+# These are generated per run and can be hundreds of megabytes.
+runs/
+*.frameforge/
+evidence_samples/
+captures/
+screenshots/
+recordings/
+*.mp4
+*.mkv
+*.avi
+
+# Logs and diagnostics
+*.log
+logs/
+frameforge-debug.log
+*.trace
+*.trace.json
+
+# Test and coverage output
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+junit.xml
+test-results/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+env.bak/
+venv.bak/
+
+# Caches
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pyre/
+.pytype/
+.ruff_cache/
+.cache/
+node_modules/
+.npm/
+
+# Editors and IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Tooling
+.bazelrc.local
+MODULE.bazel.lock.local
+
+# OS
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/

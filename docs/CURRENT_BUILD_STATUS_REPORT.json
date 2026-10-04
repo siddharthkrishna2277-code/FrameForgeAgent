@@ -1,0 +1,385 @@
+{
+  "schema_version": "1.0",
+  "generated": "2026-10-04",
+  "mode": "read-only audit; no input injected; no game launched",
+  "build_identity": {
+    "repo_root": "D:\\FrameForge\\FrameForgeAgent",
+    "vcs": null,
+    "branch": null,
+    "commit": null,
+    "note": "not a git repository; build identity unversioned",
+    "python": "3.14.7",
+    "pip": "26.2.1",
+    "ffmpeg": "9.0.1",
+    "platform": "Windows 11 build 26300",
+    "monitors": 1,
+    "lockfile": "requirements.lock (20 pins; 128 installed)",
+    "ci": null,
+    "lint_configured": "ruff section present in pyproject.toml; not installed, never run"
+  },
+  "readiness": {
+    "rating": "INTERNAL_ALPHA_SAFE_FOR_MOCK_TESTING",
+    "safe_for_live_desktop_input": false,
+    "safe_for_game_testing": false,
+    "decision": "A. Continue safety/input completion before UI work.",
+    "can_work_on_today": [
+      "mock-backend and headless test development",
+      "wiring the arm state machine into the runner",
+      "removing the two scripts that bypass the safety layer"
+    ],
+    "prohibited_today": [
+      "any live mouse or keyboard injection",
+      "any game testing, online or offline",
+      "the Notepad proof of concept",
+      "running scripts/probe_estop_hook.py or scripts/probe_input_timing.py"
+    ]
+  },
+  "tests": {
+    "unit": {
+      "count": 491,
+      "result": "pass",
+      "backend": "mock",
+      "env": "headless"
+    },
+    "integration": {
+      "count": 20,
+      "result": "pass",
+      "backend": "mock+fakes",
+      "env": "headless"
+    },
+    "hardware": {
+      "count": 34,
+      "passed": 33,
+      "skipped": 1,
+      "skip_reason": "refusing to send a global chord with a protected window in front",
+      "backend": "live capture+OCR; injection guarded",
+      "env": "user desktop"
+    },
+    "headless_total": 511,
+    "lint": {
+      "configured": true,
+      "installed": false,
+      "last_run": null
+    },
+    "typecheck": {
+      "configured": false
+    },
+    "ci": {
+      "present": false
+    },
+    "live_input_tests": "NOT RUN \u2014 UNSAFE / BLOCKED"
+  },
+  "critical_finding": {
+    "id": "D1",
+    "summary": "ExecutionStateMachine and TargetSession are implemented and unit-tested but never constructed by the runner or the CLI.",
+    "evidence": "grep of src/frameforge/tasks/runner.py and cli/main.py for ExecutionStateMachine, TargetSession, begin_countdown, confirm_active, target_guard, arm_token returns no match",
+    "consequence": "every safety gate except P0/P0.5/P9 is unverified end-to-end; the tested components are not on the live path"
+  },
+  "input_safety_audit": {
+    "only_injector": "src/frameforge/actions/safety.py",
+    "forbidden_libraries_found": [],
+    "bypass_call_sites": [
+      {
+        "file": "scripts/probe_estop_hook.py",
+        "lines": [
+          101,
+          102,
+          105
+        ],
+        "severity": "CRITICAL",
+        "bypasses_safety_manager": true,
+        "bypasses_target_guard": true,
+        "validates_target": false,
+        "uses_window_from_point": false,
+        "checks_foreground": false,
+        "checks_protected_windows": false,
+        "fixed_coordinate": false,
+        "cleanup": false,
+        "mock_or_live": "live",
+        "remediation": "delete or quarantine behind an explicit opt-in flag"
+      },
+      {
+        "file": "scripts/probe_input_timing.py",
+        "lines": [
+          37,
+          57
+        ],
+        "severity": "CRITICAL",
+        "bypasses_safety_manager": true,
+        "bypasses_target_guard": true,
+        "validates_target": false,
+        "uses_window_from_point": false,
+        "checks_foreground": false,
+        "checks_protected_windows": false,
+        "fixed_coordinate": true,
+        "cleanup": false,
+        "mock_or_live": "live",
+        "remediation": "delete or quarantine behind an explicit opt-in flag"
+      }
+    ],
+    "keybd_event": "declared as argtypes in adapters/window/pywin32_window.py:177,416; never invoked",
+    "historical_alt_tap_removed": true
+  },
+  "gates": {
+    "P0_no_locationless_click": "COMPLETE_AND_VERIFIED",
+    "P0_5_no_fixed_coordinates": "PARTIAL",
+    "P1_target_session_mandatory": "IMPLEMENTED_NOT_VERIFIED",
+    "P2_window_from_point": "IMPLEMENTED_NOT_VERIFIED",
+    "P3_protected_window_registry": "PARTIAL",
+    "P4_named_coords_and_dpi": "IMPLEMENTED_NOT_VERIFIED",
+    "P5_topology_change_invalidation": "IMPLEMENTED_NOT_VERIFIED",
+    "P6_target_capture_and_vision": "IMPLEMENTED_NOT_VERIFIED",
+    "P7_ui_automation": "NOT_IMPLEMENTED",
+    "P8_user_armed_state_machine": "IMPLEMENTED_NOT_VERIFIED",
+    "P9_emergency_stop_and_cleanup": "COMPLETE_AND_VERIFIED"
+  },
+  "release_gates_failing": [
+    "no unsafe fixed screen point (scripts/probe_input_timing.py)",
+    "no direct live input outside approved backend (2 scripts)",
+    "valid target session required (not constructed)",
+    "verified point ownership required (guard not supplied)",
+    "protected-window denial required (registry not instantiated)",
+    "dual-monitor safety validated (NOT RUN \u2014 second display disconnected)"
+  ],
+  "defects": [
+    {
+      "id": "D1",
+      "severity": "CRITICAL",
+      "area": "safety",
+      "summary": "Arm/TargetSession not wired into the run path",
+      "open": true,
+      "blocking": true
+    },
+    {
+      "id": "D2",
+      "severity": "CRITICAL",
+      "area": "safety",
+      "summary": "Two diagnostic scripts inject raw SendInput, bypassing every guard",
+      "open": true,
+      "blocking": true
+    },
+    {
+      "id": "D3",
+      "severity": "HIGH",
+      "area": "reproducibility",
+      "summary": "No git repository",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D4",
+      "severity": "HIGH",
+      "area": "perception",
+      "summary": "WinRT OCR recall degraded on small dark body text",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D5",
+      "severity": "HIGH",
+      "area": "targeting",
+      "summary": "No UI Automation; coordinate-only targeting",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D6",
+      "severity": "MEDIUM",
+      "area": "safety",
+      "summary": "TargetGuard not supplied at runtime",
+      "open": true,
+      "blocking": true
+    },
+    {
+      "id": "D7",
+      "severity": "MEDIUM",
+      "area": "environment",
+      "summary": "Second monitor disconnected; dual-monitor acceptance cannot run",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D8",
+      "severity": "MEDIUM",
+      "area": "ux",
+      "summary": "No GUI; arming is not possible",
+      "open": true,
+      "blocking": true
+    },
+    {
+      "id": "D9",
+      "severity": "LOW",
+      "area": "scenario",
+      "summary": "Notepad scenario red (8/12 at last live run)",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D10",
+      "severity": "LOW",
+      "area": "build",
+      "summary": "No linter or typechecker in CI",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D11",
+      "severity": "LOW",
+      "area": "repro",
+      "summary": "128 installed vs 20 pinned",
+      "open": true,
+      "blocking": false
+    },
+    {
+      "id": "D12",
+      "severity": "INFORMATIONAL",
+      "area": "performance",
+      "summary": "Capture ~108 ms/frame (~9 fps)",
+      "open": true,
+      "blocking": false
+    }
+  ],
+  "closed_defects": [
+    {
+      "summary": "Stuck Ctrl+Shift / keyboard corruption",
+      "root_cause": "untracked raw-VK injection that refused releases once disarmed",
+      "evidence": "40 input-safety tests; not reproducible in 511"
+    },
+    {
+      "summary": "Unexpected layout/IME switch",
+      "root_cause": "ALT keybd_event tap in set_foreground",
+      "evidence": "removed; zero keybd_event calls remain"
+    },
+    {
+      "summary": "FxSound output-device switching",
+      "root_cause": "symptom of stuck Ctrl+Shift",
+      "evidence": "root cause closed"
+    },
+    {
+      "summary": "Spontaneous context menus",
+      "root_cause": "hardware test right-clicked a fixed primary-monitor point with Hermes foreground",
+      "evidence": "test deleted; no fixed points remain in tests/"
+    }
+  ],
+  "game_readiness": {
+    "mock_only": "READY",
+    "standard_app_isolated": "CONDITIONALLY_READY",
+    "offline_single_player_isolated": "NOT_READY",
+    "local_private_game": "NOT_READY",
+    "official_online_multiplayer": "NOT_RECOMMENDED_AND_NOT_APPROVED",
+    "gta_v_online": {
+      "status": "NOT APPROVED FOR AUTOMATED TESTING",
+      "no_live_bot_testing": true,
+      "no_anti_cheat_evasion": true,
+      "no_progress_rewards_advantage_or_farming": true,
+      "requires": "separate legal, terms and publisher-permission review before any future consideration"
+    },
+    "first_future_target": "offline single-player title, local sandbox, or purpose-built test scene \u2014 not an official online service"
+  },
+  "next_tasks": {
+    "highest_value_implementation": "A2 \u2014 wire ExecutionStateMachine into the runner so a run cannot reach ACTIVE without a user arm token",
+    "highest_value_verification": "A1+A3 \u2014 delete the bypassing scripts, then run the Notepad POC with Hermes visible and the pointer over Hermes",
+    "next_safe_ui_task": "read-only status and audit-log view; no target selection, no ARM control, no countdown"
+  },
+  "update_2026_10_04_safety_wiring": {
+    "summary": "Critical safety wiring completed. Bypasses deleted, exclusive input authority enforced by CI, state machine + session + guard wired into the runner and CLI.",
+    "deleted_bypass_scripts": [
+      {
+        "file": "scripts/probe_estop_hook.py",
+        "reason": "called SendInput directly (lines 101-105) with no target session, guard, or protected-window check"
+      },
+      {
+        "file": "scripts/probe_input_timing.py",
+        "reason": "called SendInput directly (lines 37, 57) with a hard-coded (300, 300)"
+      }
+    ],
+    "remaining_scripts_all_read_only": true,
+    "input_authority": {
+      "only_injector": "src/frameforge/actions/safety.py",
+      "guard_test": "tests/unit/test_input_authority_static.py",
+      "guard_tests": 6,
+      "checks": [
+        "only the approved module may call SendInput/keybd_event/mouse_event/SetCursorPos",
+        "the approved module still calls SendInput (guards against a vacuous allowlist)",
+        "no injection library imported anywhere",
+        "no hard-coded absolute screen point in tests/, scripts/, fixtures/",
+        "the two bypass scripts do not exist",
+        "no script constructs a live (non-dry-run) input port"
+      ]
+    },
+    "enforced_runtime_path": [
+      "CLI / runner / scenario / future GUI",
+      "LiveGate (actions/runtime.py) - the only authoriser",
+      "ExecutionStateMachine",
+      "TargetSession",
+      "arm token",
+      "TargetGuard",
+      "InputSafetyController",
+      "approved Windows backend"
+    ],
+    "wiring_evidence": {
+      "runner_references_ExecutionStateMachine": true,
+      "runner_references_TargetSession": true,
+      "runner_references_PreparedRegistry": true,
+      "runner_references_arm_for_live_input": true,
+      "runner_references__build_live_gate": true,
+      "cli_exposes_arm_command": true,
+      "cli_exposes_status_command": true
+    },
+    "defects_found_and_fixed_while_wiring": [
+      "the live gate was built only at arm time, leaving the whole run unguarded",
+      "the executor's target guard was never attached because the gate is built before the executor exists",
+      "the executor could be constructed with no controller or policy; it now raises at construction (fail-closed one layer earlier)"
+    ],
+    "cli": {
+      "status": "read-only; prints state, input lock, target identity, protected set; cannot inject",
+      "arm": "the only route to live input; --attest required with no default; exits 2 without it",
+      "both_use": "_DryRunPort, which cannot inject"
+    },
+    "tests": {
+      "unit_component": 511,
+      "runner_to_backend_integration": {
+        "count": 19,
+        "file": "tests/integration/test_live_gate_integration.py",
+        "starts_from": "ScenarioRunner.prepare() - the real composition root"
+      },
+      "static_input_authority": {
+        "count": 6,
+        "file": "tests/unit/test_input_authority_static.py"
+      },
+      "headless_total": 537,
+      "result": "all pass"
+    },
+    "gates_after": {
+      "P0_no_locationless_click": "COMPLETE_AND_VERIFIED",
+      "P0_5_no_fixed_coordinates": "COMPLETE_AND_VERIFIED",
+      "P1_target_session_mandatory": "COMPLETE_AND_VERIFIED (mock path)",
+      "P2_window_from_point": "COMPLETE_AND_VERIFIED (mock path)",
+      "P3_protected_window_registry": "COMPLETE_AND_VERIFIED (mock path)",
+      "P4_named_coords_and_dpi": "IMPLEMENTED_NOT_VERIFIED (DPI context still not called at startup)",
+      "P5_topology_invalidation": "IMPLEMENTED_NOT_VERIFIED",
+      "P6_target_capture_and_vision": "PARTIAL (TargetCapture not wired to the runner)",
+      "P7_ui_automation": "NOT_IMPLEMENTED",
+      "P8_user_armed_state_machine": "COMPLETE_AND_VERIFIED (mock path)",
+      "P9_emergency_stop_and_cleanup": "COMPLETE_AND_VERIFIED",
+      "note": "(mock path) = verified through the real runner with a recording input backend. None verified on a live desktop."
+    },
+    "live_desktop_input": "DISABLED",
+    "live_input_performed_in_this_work": false,
+    "notepad_poc_run": false,
+    "notepad_poc_requires": [
+      "second monitor reconnected (currently disconnected)",
+      "explicit user approval"
+    ],
+    "remaining_blockers": [
+      "no git repository",
+      "P4 DPI awareness not enabled at startup",
+      "P5 topology change not consulted on the live path",
+      "P6 TargetCapture not wired to the runner",
+      "P7 UI Automation not implemented",
+      "no GUI, so arming requires CLI plumbing",
+      "Notepad scenario red (8/12)",
+      "single monitor connected; dual-monitor acceptance cannot run"
+    ]
+  }
+}
