@@ -468,6 +468,89 @@ guard exists for, observed live for the first time.
 **Scope: `COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP` for the guard path.
 The typed-text round trip remains `IMPLEMENTED_NOT_VERIFIED`.**
 
+## Seventh live run: the click was landing on an open menu popup
+
+Run `ff-20261004-160852-cc2611`. Two defects found; one is a **safety** defect.
+
+### 1. Frame Forge was detecting itself as a human (my bug, from the previous run)
+
+`HumanInputDetected` fired after exactly one scancode, twice in a row. Cause: the executor's
+hand-written list of "kinds that count as agent input" omitted `SCANCODE`, which was added
+in the same session. Without it the idle-time baseline was never rebased after Frame Forge's
+own keystroke, so the next sample saw idle time collapse and concluded a human had acted.
+
+**Fixed** by deriving the set from `PrimitiveType` itself rather than listing it:
+
+```python
+_AGENT_INPUT_KINDS = frozenset(PrimitiveType) - {PrimitiveType.GAMEPAD_STATE}
+```
+
+A list that must be updated when a kind is added is a list that will be forgotten again —
+and forgetting it makes the guard *fail closed on the system's own input*, which reads as
+"the operator interfered" and sends the reader hunting for the wrong cause.
+
+### 2. SAFETY: an open menu popup was an approved click target
+
+With that fixed the run completed: **56 scancodes delivered, 0 violations**, and the document
+buffer was still unchanged (`WM_GETTEXT` → `'FPROBE74'`, length 8).
+
+`GetGUIThreadInfo` showed why:
+
+```
+hwndActive : 4262424 'Notepad'
+hwndFocus  : 723232  'InputSiteWindowClass'      <- NOT the editor
+```
+
+and the click point resolved to:
+
+```
+client(400,450) -> screen(536, 580)
+WindowFromPoint -> 3868326 'Microsoft.UI.Content.PopupWindowSiteBridge'
+root            -> 'PopupHost'  rect=(207,237,569,694)  visible=1
+```
+
+**A `PopupHost` menu was open over the editor for the entire run.** Every point inside the
+editor region — (400,400), (400,300), (400,450) — resolved to that popup, which spans
+(207,237)-(569,694). The scenario's `focus_the_editor` click therefore landed on a menu, not
+on the text control, and the 56 scancodes went to a window with keyboard focus on
+`InputSiteWindowClass`.
+
+This also explains the OCR output seen in every earlier run: `Edit View`, `Select all`,
+`Delete`, `Undo`, `Insert table` are **menu items**, not document text. The verifier was
+reading a menu and reporting it as the document body.
+
+**Why the guard permitted it.** `TargetGuard.validate_point` accepts a window whose root
+hwnd or pid matches the registered target. `PopupHost` is a Notepad-owned window, so it
+passed every check: correct pid, correct root owner, inside the client rect, foreground
+correct. The guard authorised a click on a transient menu overlay because *ownership* was the
+only test, and ownership says nothing about whether the surface is the one the scenario meant.
+
+That is a real hole and it is not specific to Notepad. Any application that opens a popup
+over its own client area produces the same shape: a click the scenario believes focuses an
+editor instead activating a menu item.
+
+### Fixed and verified live
+
+`Verdict.POPUP_OVERLAY` is now a denial on both paths. `_is_transient_overlay()` matches
+framework popup class names and overlay titles as lowercase substrings — WinUI, WPF, classic
+Win32 menus, combo lists, tooltips, IME — so it stays engine-agnostic instead of becoming a
+per-application list.
+
+The point path checks it **before** the ownership test, because an owned popup passes
+ownership; that ordering is pinned by a test. The keyboard path resolves the focused window
+(`GetFocus` as fallback) and refuses a keystroke an overlay would consume.
+
+Verified live on run `ff-20261004-161709-031003`. A freshly launched Notepad covers its
+editor with a `PopupHost`, and the guard refused with zero input dispatched:
+
+```
+target_validation_failed: the window under the point is a popup/menu overlay
+('Microsoft.UI.Content.PopupWindowSiteBridge', title 'PopupHost')
+dispatched=0  delivered_to_os=0
+```
+
+19 new tests in `tests/unit/test_popup_overlay_guard.py`.
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

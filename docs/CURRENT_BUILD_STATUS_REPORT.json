@@ -672,6 +672,46 @@
       "run": "ff-20261004-160108-db7c86",
       "detail": "aborted with HumanInputDetected after exactly one scancode; the operator moved the mouse",
       "assessment": "correct behaviour - the guard halted mid-sequence rather than firing the remaining characters at a moving cursor"
+    },
+    "5_self_detected_as_human": {
+      "runs": [
+        "ff-20261004-160108-db7c86",
+        "ff-20261004-160635-c2d734"
+      ],
+      "mechanism": "the executor's hand-written list of agent-input kinds omitted SCANCODE, so the human-input baseline was never rebased after our own keystroke",
+      "symptom": "HumanInputDetected after exactly one scancode, twice",
+      "fix": "_AGENT_INPUT_KINDS derived from frozenset(PrimitiveType) minus GAMEPAD_STATE, so a new kind cannot be forgotten",
+      "lesson": "forgetting the entry makes the guard fail closed on the system's own input, which misattributes the cause"
+    }
+  },
+  "live_poc_open_safety_defect": {
+    "run": "ff-20261004-160852-cc2611",
+    "severity": "SAFETY",
+    "finding": "an open PopupHost menu overlay was an approved click target",
+    "evidence": {
+      "hwndFocus": "723232 InputSiteWindowClass (not the editor)",
+      "WindowFromPoint at client(400,450)": "3868326 Microsoft.UI.Content.PopupWindowSiteBridge",
+      "popup": "PopupHost rect=(207,237,569,694) visible=1",
+      "every editor point tested": "(400,400), (400,300), (400,450) all resolved to the popup"
+    },
+    "impact": "the scenario's focus_the_editor click landed on a menu; 56 scancodes were delivered to a window whose keyboard focus was not the editor; the document never changed",
+    "explains_prior_ocr": "'Edit View', 'Select all', 'Delete', 'Undo', 'Insert table' are menu items, not document text - the verifier was reading an open menu as the document body",
+    "why_the_guard_allowed_it": "validate_point accepts any window whose root hwnd or pid matches the target; a Notepad-owned popup passes every check. Ownership was the only test, and ownership says nothing about whether the surface is the one the scenario intended",
+    "generality": "any application that opens a popup over its own client area produces this shape",
+    "status": "FIXED and verified live",
+    "fix": {
+      "verdict": "Verdict.POPUP_OVERLAY = 'popup_overlay_at_point'",
+      "detector": "_is_transient_overlay() matches framework popup class names and overlay titles as lowercase substrings, so it is engine-agnostic rather than a per-application list",
+      "point_path": "checked BEFORE the ownership test, because an owned popup passes ownership",
+      "keyboard_path": "validate_keyboard resolves the focused window (GetFocus fallback) and refuses a keystroke that an overlay would consume",
+      "verified_live": {
+        "run": "ff-20261004-161709-031003",
+        "refusal": "target_validation_failed: the window under the point is a popup/menu overlay ('Microsoft.UI.Content.PopupWindowSiteBridge', title 'PopupHost')",
+        "dispatched": 0,
+        "delivered_to_os": 0,
+        "assessment": "correct - a freshly launched Notepad covers its editor with a PopupHost, and the guard refuses to click through it"
+      },
+      "tests": "19 new in tests/unit/test_popup_overlay_guard.py"
     }
   }
 }

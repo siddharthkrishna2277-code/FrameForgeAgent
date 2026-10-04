@@ -95,6 +95,14 @@ class ExecutorStats:
 
 
 #: Primitive kinds whose dispatch depends on a fresh display topology.
+#: Primitive kinds that count as Frame Forge's own input for the human-input baseline.
+#:
+#: Derived from PrimitiveType rather than listed by hand. The hand-written list omitted
+#: SCANCODE when scan mode was added, so the system detected *itself* as a human operator
+#: and halted the run mid-sequence - twice, live. A list that must be updated when a new
+#: kind is introduced is a list that will be forgotten again.
+_AGENT_INPUT_KINDS: frozenset = frozenset(PrimitiveType) - {PrimitiveType.GAMEPAD_STATE}
+
 _TOPOLOGY_CHECKED_PRIMITIVES = frozenset({
     PrimitiveType.MOUSE_MOVE_ABS,
     PrimitiveType.MOUSE_BUTTON,
@@ -369,14 +377,13 @@ class ActionExecutor:
                     self._pending_hold_ms = primitive.hold_ms
                 sent += 1
                 self.stats.primitives += 1
-                if self._human is not None and primitive.kind in (
-                    PrimitiveType.MOUSE_MOVE_ABS,
-                    PrimitiveType.MOUSE_MOVE_REL,
-                    PrimitiveType.MOUSE_BUTTON,
-                    PrimitiveType.KEY,
-                    PrimitiveType.SCROLL,
-                    PrimitiveType.UNICODE,
-                ):
+                # Rebase the human-input baseline after anything we send ourselves.
+                #
+                # SCANCODE was missing from this list, so scan-mode typing registered as
+                # *human* input: the baseline was never rebased after our own keystroke, and
+                # the very next sample saw idle time collapse and halted the run as
+                # HumanInputDetected. Frame Forge was detecting itself.
+                if self._human is not None and primitive.kind in _AGENT_INPUT_KINDS:
                     self._human.mark_agent_input()
                 if index == len(primitives) - 1 and not allow_hold and self._pending_hold_ms > 0:
                     # A trailing hold with no matching up is a leak; settle it before the

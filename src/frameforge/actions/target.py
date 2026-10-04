@@ -151,6 +151,45 @@ def window_at_point(point: ScreenPx) -> dict[str, object] | None:
     return info
 
 
+#: Window classes that are transient overlays rather than application surfaces.
+#:
+#: Matched case-insensitively as substrings, because these names are framework-specific and
+#: vary between Windows versions and stacks (WinUI, WPF, classic Win32 menus, IME). The
+#: alternative is a per-application list, which is precisely the universality this system
+#: exists to avoid.
+_POPUP_CLASS_MARKERS: tuple[str, ...] = (
+    "popuphost",
+    "popupwindow",
+    "popupmenusitebridge",
+    "modalpopup",
+    "menusitebridge",
+    "dropdown",
+    "comboboxex32",        # a combo's list is a popup, never the field itself
+    "tooltips_class32",
+    "class32768",          # classic Win32 menu window
+)
+
+#: Titles that identify a transient overlay regardless of class.
+_POPUP_TITLE_MARKERS: tuple[str, ...] = ("popuphost", "#32768")
+
+
+def _is_transient_overlay(under: dict | None) -> bool:
+    """True when the window at the point is a popup/menu overlay, not the target surface.
+
+    Ownership is not the test. A popup owned by the registered target passes every pid and
+    root-hwnd check, and a click meant for an editor lands on a menu instead - which is how a
+    live run typed 56 characters at a window whose keyboard focus was not the text control,
+    while the verifier spent several runs reporting menu items as document text.
+    """
+    if not under:
+        return False
+    cls = str(under.get("class_name") or "").lower()
+    if any(marker in cls for marker in _POPUP_CLASS_MARKERS):
+        return True
+    title = str(under.get("root_title") or "").strip().lower()
+    return bool(title) and any(marker in title for marker in _POPUP_TITLE_MARKERS)
+
+
 class Verdict(StrEnum):
     ALLOW = "allow"
     NO_SESSION = "no_registered_target_session"
@@ -168,6 +207,9 @@ class Verdict(StrEnum):
     NOT_IN_REGION = "point_not_in_target_region"
     PROTECTED = "protected_window_at_point"
     WRONG_WINDOW = "window_under_point_is_not_target"
+    #: A popup/menu overlay owned by the target was under the point. Refused: an overlay is
+    #: never the surface a scenario planned against, even when the target owns it.
+    POPUP_OVERLAY = "popup_overlay_at_point"
     TARGET_GONE = "target_window_closed"
 
 
@@ -422,6 +464,24 @@ class TargetGuard:
         s = self.session
         assert s is not None
 
+        # An open popup owns keyboard focus away from the surface a scenario means to type
+        # into. Scancodes sent now would be consumed by the menu - exactly what happened
+        # live: 56 characters accepted by every guard, consumed by an open PopupHost, with
+        # the document left untouched.
+        focus_target = window_at_point(self._last_point) if self._last_point else None
+        if focus_target is None:
+            caret = user32.GetFocus()
+            if caret:
+                focus_target = window_identity(int(caret))
+        if _is_transient_overlay(focus_target):
+            return ValidationResult(
+                Verdict.POPUP_OVERLAY,
+                f"keyboard focus is on a popup/menu overlay "
+                f"({(focus_target or {}).get('class_name')!r}); a keystroke would be "
+                "delivered to the menu rather than the target surface",
+                under_point=focus_target,
+            )
+
         fg = window_identity(int(user32.GetForegroundWindow() or 0))
         fg_root = window_root(int(fg["hwnd"]))
 
@@ -499,6 +559,20 @@ class TargetGuard:
             return ValidationResult(Verdict.WRONG_WINDOW,
                                    "no window is under the intended point",
                                    foreground=fg)
+
+        # A popup/menu overlay owned by the target is still not a legitimate click target.
+        # Ownership is necessary but not sufficient: a Notepad PopupHost passed every pid and
+        # root-hwnd check, and a click meant to focus the editor landed on an open menu
+        # instead. Dismissing a menu is a separate, declared action.
+        if _is_transient_overlay(under):
+            return ValidationResult(
+                Verdict.POPUP_OVERLAY,
+                f"the window under the point is a popup/menu overlay "
+                f"({under.get('class_name')!r}, title {under.get('root_title')!r}); an "
+                "overlay is not a declared click target - close it with a declared action "
+                "rather than clicking through it",
+                under_point=under, foreground=fg,
+            )
 
         under_pid = under.get("root_pid")
         if under_pid in s.protected_pids:
