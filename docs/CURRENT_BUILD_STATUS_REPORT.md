@@ -551,6 +551,151 @@ dispatched=0  delivered_to_os=0
 
 19 new tests in `tests/unit/test_popup_overlay_guard.py`.
 
+## INVESTIGATION — reported right-click context menu inside Hermes
+
+**No live input was emitted during or after this investigation.** No POC was run.
+
+### Observed live evidence
+
+A right-click context menu reportedly opened inside the Hermes window on the laptop monitor
+during a dual-monitor Notepad test. What the recorded evidence actually contains, across all
+36 run directories:
+
+| Query | Result |
+|---|---|
+| `mouse_button` events delivered (`count=1`) | 32, **all left button** |
+| Right-click events, any run | **0** |
+| `allow_right_click = True` anywhere in `src/` | **none** |
+| Runs with any right-click in `events.jsonl` | **0** |
+
+The audit schema does not record which button a `mouse_button` event carried, so button
+identity had to be established from the guard path instead of from the log. Doing so:
+
+* `InputSafetyManager.__init__(allow_right_click: bool = False)` — default off.
+* `_screen()` returns `Violation.RIGHT_CLICK_NOT_ALLOWED` for any `button == "right"` and
+  `down` while the flag is false, **before** `_inject` is reached.
+* No constructor in `src/` passes `allow_right_click=True`.
+
+**Conclusion: the current code cannot emit a right-click.** Guardrail G-ABS-11 blocks it
+before injection. Therefore the reported context menu was **not** produced by a right-click
+from this code path as it stands today.
+
+That leaves two possibilities, and the evidence does not distinguish them:
+
+1. The context menu came from a path not represented in `runs/` — for example one of the
+   two diagnostic probe scripts deleted in `5c680a1` (`scripts/probe_estop_hook.py`,
+   `scripts/probe_input_timing.py`), which called `SendInput` directly with no guard at all.
+   Those scripts predate every run directory recorded here.
+2. The context menu was produced by a keypress, not a mouse button — `VK_APPS` / `Menu`
+   / `Shift+F10`. All three are refused by `_screen()` as `Violation.MENU_KEY`, so this
+   also requires a non-current path or an older build.
+
+**Artifact needed to decide:** the run ID or timestamp of the reported incident, so the
+matching `input_audit.json` can be read. Without it the specific event cannot be attributed.
+Classification: **UNDETERMINED** as to the emitting path; **NOT a perception or verifier
+issue** in either case.
+
+### Exact implementation defect (confirmed by reading the code)
+
+`InputSafetyManager._abs_norm` — `src/frameforge/actions/safety.py`:
+
+```python
+def _abs_norm(self, x: int, y: int) -> tuple[int, int]:
+    vw, vh = virtual_size()                       # SM_CXVIRTUALSCREEN, SM_CYVIRTUALSCREEN
+    nx = int(x * 65535 / max(1, vw - 1))          # <-- no origin term
+    ny = int(y * 65535 / max(1, vh - 1))
+    return max(0, min(65535, nx)), max(0, min(65535, ny))
+```
+
+Measured geometry on this machine:
+
+```
+SM_XVIRTUALSCREEN  (76) = 0        SM_CXVIRTUALSCREEN (78) = 3840
+SM_YVIRTUALSCREEN  (77) = 0        SM_CYVIRTUALSCREEN (79) = 1080
+primary = 0,0,1920,1080            negative origin: NO
+```
+
+The formula divides by virtual **size** but ignores virtual **origin**. On *this* layout the
+origin is (0,0), so the term is zero and the two forms are numerically identical — measured
+error 0 px at every test point. The defect is therefore **latent here and not the cause of
+the reported incident**, but it is real: with the external monitor placed to the *left*
+(origin −1920) a planned point of (1919, 500) lands at (−2, 499) instead of (1919, 500) — a
+**1921 px** error that puts the cursor on the wrong display entirely.
+
+Correct form: `nx = (x - vx) * 65535 / (vw - 1)`.
+
+### SendInput payload (as emitted)
+
+* `MOUSEEVENTF_ABSOLUTE` — **set**
+* `MOUSEEVENTF_VIRTUALDESK` — **set**
+* `MOUSEEVENTF_MOVE` — **set**
+* flags: `MOVE | ABSOLUTE | VIRTUALDESK` = `0x0001 | 0x8000 | 0x0001` as OR'd in `_inject`
+* button down and button up are separate `_MOUSEINPUT` submissions via `_button()`, whose
+  down/up flag pairs come from `_MOUSE_BUTTON_FLAGS`.
+
+So both flags that matter are present, and normalisation spans the whole virtual desktop
+when the origin is zero. **Primary-monitor normalisation and a missing VIRTUALDESK flag are
+both ruled out** for this geometry.
+
+### Guard gap (confirmed, and the real finding)
+
+The executor's pre-button-down check validates the **planned** point, never the **actual**
+cursor position.
+
+```python
+if (primitive.kind is PrimitiveType.MOUSE_BUTTON and primitive.down
+        and self.target_guard is not None
+        and self._verified_move is not None):
+    result = self.target_guard.validate_point(self._verified_move)   # planned, not actual
+```
+
+`_verified_move` is assigned from the plan at the `MOUSE_MOVE_ABS` primitive and is never
+refreshed from the OS. `GetCursorPos` appears **nowhere** in `executor.py` or `target.py`;
+`cursor_position()` exists in `safety.py` but is not called from either. There is no defined
+tolerance for planned-vs-actual drift.
+
+Consequence: if the cursor does not arrive where the plan said — mis-normalisation, a
+changed display layout, a concurrent input source, a snapped or dragged window — the guard
+validates a point that is not where the click lands, and the button goes down wherever the
+cursor actually is. `WindowFromPoint` is evaluated at the *planned* coordinate, so it reports
+the target even when the cursor is elsewhere.
+
+This is the mechanism by which input could reach Hermes even with every other check passing.
+It is a **design gap, not an observed event** in the recorded runs.
+
+### Answer to "how could a target on the external display produce a click inside Hermes"
+
+Not reproducible from the current code. The path would require the cursor to be somewhere
+other than the planned point at button-down, and the guard to validate the planned point
+rather than the actual one — which is exactly the gap above. With
+`MOUSEEVENTF_VIRTUALDESK` set and a zero origin, the normalisation itself is correct on this
+layout, so the cursor does arrive where planned unless something external moved it.
+
+### Regression tests added
+
+`tests/unit/test_multimonitor_target_routing.py` — 13 passed, 2 xfailed, representing the
+exact topology (Hermes on primary, Notepad on external, 3840×1080 virtual desktop):
+
+* external-monitor points normalise mid-range rather than saturating;
+* the 1919→1920 seam is monotonic (a fold means primary-only clamping);
+* a negative origin maps the virtual origin to 0;
+* `ABSOLUTE | VIRTUALDESK` are both present on the move;
+* button down and up are distinct payloads;
+* right-click is denied by default and nothing in `src/` enables it;
+* the executor and guard never read the cursor position (**open defect**, asserted so the
+  test fails when fixed);
+* no tolerance comparison exists (**open defect**);
+* `_abs_norm` uses the origin (**xfail**, open defect);
+* the normalised pair is recorded in evidence (**xfail**, open defect).
+
+### Status
+
+* **Live input emitted after the stop instruction: NO.** No POC was run; only read-only
+  queries (`GetSystemMetrics`, `EnumWindows`, `WindowFromPoint`, `GetCursorPos`,
+  `GetGUIThreadInfo`, `WM_GETTEXT`) were issued.
+* **Dual-monitor Notepad POC: NOT VERIFIED.**
+* Incident attribution: **UNDETERMINED** — needs the run ID or timestamp.
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

@@ -409,7 +409,8 @@
     "readonly_diagnostic_panel": "COMPLETE_AND_VERIFIED_MOCK",
     "live_poc_preflight": "COMPLETE_AND_VERIFIED_MOCK",
     "guard_path_live_user_desktop": "COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP",
-    "typed_text_round_trip": "IMPLEMENTED_NOT_VERIFIED"
+    "typed_text_round_trip": "IMPLEMENTED_NOT_VERIFIED",
+    "dual_monitor_notepad_poc": "NOT VERIFIED"
   },
   "this_change_set": {
     "git_initialised": true,
@@ -713,5 +714,88 @@
       },
       "tests": "19 new in tests/unit/test_popup_overlay_guard.py"
     }
+  },
+  "right_click_incident_investigation": {
+    "live_input_after_stop_instruction": false,
+    "poc_rerun": false,
+    "observed": {
+      "runs_examined": 36,
+      "mouse_button_events_delivered": 32,
+      "right_click_events_found": 0,
+      "allow_right_click_true_in_src": 0,
+      "verdict": "the current code cannot emit a right-click; G-ABS-11 refuses it before injection"
+    },
+    "attribution": {
+      "status": "UNDETERMINED",
+      "artifact_needed": "the run ID or timestamp of the reported incident, to read its input_audit.json",
+      "candidates": [
+        "a path not represented in runs/ - notably scripts/probe_estop_hook.py or scripts/probe_input_timing.py, deleted in 5c680a1, which called SendInput directly with no guard",
+        "a keypress (VK_APPS / Menu / Shift+F10) rather than a mouse button - also refused by _screen() as MENU_KEY"
+      ],
+      "ruled_out": [
+        "perception defect",
+        "verifier defect"
+      ]
+    },
+    "measured_geometry": {
+      "SM_XVIRTUALSCREEN": 0,
+      "SM_YVIRTUALSCREEN": 0,
+      "SM_CXVIRTUALSCREEN": 3840,
+      "SM_CYVIRTUALSCREEN": 1080,
+      "primary": [
+        0,
+        0,
+        1920,
+        1080
+      ],
+      "negative_origin": false
+    },
+    "implementation_defect": {
+      "site": "src/frameforge/actions/safety.py InputSafetyManager._abs_norm",
+      "defect": "divides by virtual SIZE, ignores virtual ORIGIN",
+      "latent_here": true,
+      "evidence": "origin is (0,0) on this layout so measured error is 0 px at every test point",
+      "consequence_when_triggered": "with origin -1920 (external monitor left of primary), planned (1919,500) lands at (-2,499) - a 1921 px error onto the wrong display",
+      "correct_form": "nx = (x - vx) * 65535 / (vw - 1)",
+      "cause_of_reported_incident": false
+    },
+    "sendinput_payload": {
+      "MOUSEEVENTF_ABSOLUTE": true,
+      "MOUSEEVENTF_VIRTUALDESK": true,
+      "MOUSEEVENTF_MOVE": true,
+      "button_down_up_separate": true,
+      "ruled_out": [
+        "primary-monitor normalisation",
+        "missing MOUSEEVENTF_VIRTUALDESK"
+      ]
+    },
+    "guard_gap": {
+      "site": "src/frameforge/actions/executor.py ActionExecutor.execute",
+      "defect": "pre-button-down check validates self._verified_move (the planned point), never the actual cursor position",
+      "GetCursorPos_in_executor": false,
+      "GetCursorPos_in_target_guard": false,
+      "cursor_position_defined_but_uncalled": true,
+      "defined_tolerance": false,
+      "consequence": "if the cursor is not where the plan said, the guard validates a point that is not where the click lands; WindowFromPoint is evaluated at the planned coordinate so it reports the target even when the cursor is elsewhere",
+      "status": "OPEN - design gap, not an observed event in the recorded runs"
+    },
+    "tests_added": {
+      "file": "tests/unit/test_multimonitor_target_routing.py",
+      "passed": 13,
+      "xfailed_open_defects": 2,
+      "covers": [
+        "external-monitor normalisation",
+        "seam monotonicity",
+        "negative origin",
+        "ABSOLUTE+VIRTUALDESK flags",
+        "separate button payloads",
+        "right-click denial",
+        "no cursor readback",
+        "no tolerance",
+        "origin term absent",
+        "normalised payload not recorded"
+      ]
+    },
+    "poc_status": "NOT VERIFIED"
   }
 }
