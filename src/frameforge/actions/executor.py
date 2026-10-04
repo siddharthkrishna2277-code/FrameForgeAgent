@@ -88,6 +88,14 @@ class ExecutorStats:
     estops_honoured: int = 0
 
 
+#: Primitive kinds whose dispatch depends on a fresh display topology.
+_TOPOLOGY_CHECKED_PRIMITIVES = frozenset({
+    PrimitiveType.MOUSE_MOVE_ABS,
+    PrimitiveType.MOUSE_BUTTON,
+    PrimitiveType.KEY,
+})
+
+
 class ActionExecutor:
     """Executes validated primitive batches under the guards."""
 
@@ -227,7 +235,7 @@ class ActionExecutor:
                 # session creation. A monitor disconnected or a scaling changed between
                 # planning and dispatch invalidates every cached rectangle, so the action is
                 # refused rather than computed from stale geometry.
-                if primitive.kind in (PrimitiveType.MOUSE_MOVE_ABS, PrimitiveType.MOUSE_BUTTON):
+                if primitive.kind in _TOPOLOGY_CHECKED_PRIMITIVES:
                     if self.target_guard is not None:
                         same, why = self.target_guard.session.refresh_topology()
                         if not same:
@@ -317,6 +325,30 @@ class ActionExecutor:
                 if not outcome.ok:
                     self._input.set_enabled(False, thorough=False)
                     raise FrameForgeError(outcome.detail or "controller refused action")
+                # Keyboard input must clear the same gate as mouse input.
+                #
+                # Keyboard events have no point, so validate_point cannot apply - but the
+                # consequences of skipping the guard are identical: SendInput delivers keys
+                # to whatever holds foreground focus, so an unguarded keystroke while the
+                # operator has Hermes or a browser in front types into *that*. The Notepad
+                # round-trip failed for exactly this reason - the click was guarded and the
+                # typing was not, so the text went to whatever was focused.
+                if primitive.kind is PrimitiveType.KEY:
+                    keyboard = self.target_guard.validate_keyboard() \
+                        if self.target_guard is not None else None
+                    if keyboard is None:
+                        self._refuse_target(
+                            "refused: keyboard input with no target guard; a keystroke with "
+                            "no verified target goes to whatever holds focus",
+                            event="keyboard_without_target_guard",
+                        )
+                        break
+                    if not keyboard.ok:
+                        self._refuse_target(keyboard.detail, event=keyboard.verdict.value,
+                                            under_point=keyboard.under_point,
+                                            foreground=keyboard.foreground)
+                        break
+
                 if primitive.down and primitive.kind is PrimitiveType.KEY \
                         and primitive.key in _MODIFIER_KEYS:
                     self._pending_modifier = True

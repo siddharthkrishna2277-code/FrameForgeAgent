@@ -409,17 +409,27 @@ class ActionCompiler:
                 [Primitive(kind=PrimitiveType.UNICODE, text=a.text)],
                 a.blast(),
             )
-        # Scan mode: map each character through the keyboard layout. Kept simple and
-        # explicit; a layout-aware implementation belongs in the adapter, and this is
-        # the conservative fallback.
+        # Scan mode: emit a real hardware scancode (KEYEVENTF_SCANCODE), which is the only
+        # thing a game reading raw WM_INPUT / DirectInput scancodes will accept.
+        #
+        # The previous implementation here expanded the text to Key values and emitted
+        # ordinary virtual-key events with wScan=0. That is *identical* to unicode mode, so
+        # 'scan' was a label that described a capability the code did not have - and a
+        # profile selecting it for a scancode-reading target got silent no-ops.
         from frameforge.actions.textmap import text_to_keys
 
         prims: list[Primitive] = []
         for key in text_to_keys(a.text):
+            scancode = key.scancode
+            if scancode is None:
+                msg = (f"key {key.name} has no scancode; it cannot be typed in scan mode. "
+                       "Use method='unicode', or bind an intent.")
+                raise ValueError(msg)
             prims.append(
-                Primitive(kind=PrimitiveType.KEY, key=key, down=True, hold_ms=a.interval_ms or 12)
-            )
-            prims.append(Primitive(kind=PrimitiveType.KEY, key=key, down=False))
+                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode, down=True,
+                          hold_ms=a.interval_ms or 12))
+            prims.append(
+                Primitive(kind=PrimitiveType.SCANCODE, scancode=scancode, down=False))
         return CompiledAction(a, prims, a.blast())
 
     def _compile_gamepad_button(self, a: GamepadButton) -> CompiledAction:

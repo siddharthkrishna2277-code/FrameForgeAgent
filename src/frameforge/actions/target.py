@@ -386,6 +386,9 @@ class TargetGuard:
 
     # -------------------------------------------------------------- point checks
 
+    #: Last point that passed validate_point, for the keyboard check.
+    _last_point: ScreenPx | None = None
+
     def refresh_topology(self) -> tuple[bool, str]:
         """Delegate to the registered session.
 
@@ -400,6 +403,67 @@ class TargetGuard:
         if refresh is None:
             return False, "target session cannot verify the display topology"
         return refresh()
+
+    def validate_keyboard(self) -> ValidationResult:
+        """Gate a keystroke. Keyboard events carry no point, so this replaces
+        ``validate_point`` for them rather than relaxing it.
+
+        A keystroke is delivered to whichever window holds foreground focus. Without this
+        check, an unguarded key press while the operator has Hermes, a browser or a terminal
+        in front types into *that* - the same failure as an unguarded click, reached by a
+        different route. It is deliberately at least as strict as the point check: the
+        registered target must hold focus, and the point currently under the cursor must
+        still belong to it, because a click that moved focus and a keypress that followed it
+        are the same sequence.
+        """
+        session_check = self.validate_session()
+        if not session_check.ok:
+            return session_check
+        s = self.session
+        assert s is not None
+
+        fg = window_identity(int(user32.GetForegroundWindow() or 0))
+        fg_root = window_root(int(fg["hwnd"]))
+
+        if fg_root in s.protected_pids or fg.get("root_pid") in s.protected_pids:
+            return ValidationResult(
+                Verdict.PROTECTED,
+                f"the foreground window is pid {fg.get('root_pid')} "
+                f"({fg.get('root_title')!r}), which is protected; a keystroke would be "
+                "delivered to it",
+                foreground=fg,
+            )
+
+        if fg_root != s.hwnd and fg.get("pid") != s.pid:
+            return ValidationResult(
+                Verdict.WRONG_WINDOW,
+                f"the foreground window is hwnd={fg_root} pid={fg.get('pid')} "
+                f"({fg.get('root_title')!r}), not the registered target "
+                f"hwnd={s.hwnd} pid={s.pid}; SendInput would deliver the keystroke there",
+                foreground=fg,
+            )
+
+        # The cursor must also still be over the target: a keypress commonly follows a
+        # click, and if focus moved since the plan was made, the plan is stale.
+        under = window_at_point(self._last_point or ScreenPx(0, 0)) \
+            if self._last_point is not None else None
+        if under is not None:
+            under_pid = under.get("root_pid")
+            if under_pid in s.protected_pids:
+                return ValidationResult(
+                    Verdict.PROTECTED,
+                    f"the window under the cursor is pid {under_pid}, which is protected",
+                    under_point=under, foreground=fg,
+                )
+            if int(under.get("root_hwnd") or 0) != s.hwnd and under.get("pid") != s.pid:
+                return ValidationResult(
+                    Verdict.WRONG_WINDOW,
+                    f"the window under the cursor is hwnd={under.get('root_hwnd')} "
+                    f"pid={under_pid}, not the registered target; the click that set focus "
+                    "is stale",
+                    under_point=under, foreground=fg,
+                )
+        return ValidationResult(Verdict.ALLOW, foreground=fg)
 
     def validate_point(self, screen_point: ScreenPx, *,
                         check_window_under_point: bool = True) -> ValidationResult:
@@ -423,6 +487,8 @@ class TargetGuard:
                 f"point {client_x},{client_y} (client-relative) is outside every approved "
                 f"region {[r.as_tuple() for r in s.region_rects()]}",
             )
+
+        self._last_point = screen_point
 
         if not check_window_under_point:
             return ValidationResult(Verdict.ALLOW)

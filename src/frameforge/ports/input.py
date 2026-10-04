@@ -126,6 +126,18 @@ class Key(StrEnum):
     SLASH = "slash"
     GRAVE = "grave"
 
+    @property
+    def scancode(self) -> int | None:
+        """Hardware scancode (set 1), or None if this key has no scancode form.
+
+        Lives here rather than in the adapter so scan-mode compilation needs no adapter
+        import, and so a key that cannot be typed in scan mode fails loudly at compile
+        time rather than emitting a silent no-op at runtime.
+        """
+        from frameforge.adapters.input.sendinput import _SC
+
+        return _SC.get(self)
+
     @classmethod
     def parse(cls, raw: str) -> Key:
         """Parse a key name, tolerating common aliases used in profiles."""
@@ -169,6 +181,9 @@ class PrimitiveType(StrEnum):
     SCROLL = "scroll"
     KEY = "key"
     UNICODE = "unicode"
+    #: A hardware scancode (set 1) with KEYEVENTF_SCANCODE. Distinct from KEY: a target
+    #: reading raw WM_INPUT/DirectInput ignores virtual-key events entirely.
+    SCANCODE = "scancode"
     GAMEPAD_STATE = "gamepad_state"  # P5+; feature-flagged, no-op when unsupported
 
 
@@ -182,6 +197,8 @@ class Primitive:
     """
 
     kind: PrimitiveType
+    #: Hardware scancode for SCANCODE primitives; 0 for every other kind.
+    scancode: int = 0
     x: int = 0
     y: int = 0
     dx: int = 0

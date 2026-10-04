@@ -455,5 +455,52 @@
       "P7 UI Automation not implemented",
       "no live desktop validation of any kind"
     ]
+  },
+  "notepad_poc_triage": {
+    "stale_figure_corrected": {
+      "reported": "8/12",
+      "actual": "7 pass / 2 fail of 9 steps",
+      "run_id": "ff-20261004-072409-368f5e"
+    },
+    "not_an_ocr_failure": {
+      "evidence_frame": "runs/ff-20261004-072409-368f5e/frames/43371820_state_menu_file.png",
+      "finding": "document body contains only 'w' (restored session); typed text absent",
+      "conclusion": "OCR reported the truth; the defect was in input delivery"
+    },
+    "step_classification": {
+      "target_safety": [
+        "notepad_ready (anchor_visible)",
+        "no_save_prompt_is_showing (anchor_absent)"
+      ],
+      "visual_ocr": [
+        "type_probe_text",
+        "probe_text_visible",
+        "delete_selection",
+        "probe_text_cleared"
+      ],
+      "neutral": [
+        "clear_the_document",
+        "dismiss_any_open_menu",
+        "focus_the_editor"
+      ],
+      "safety_gate_independent_of_ocr": true
+    },
+    "defects_found_and_fixed": [
+      {
+        "id": "keyboard_bypassed_target_guard",
+        "detail": "TargetGuard was consulted only for mouse primitives; a keystroke goes to whatever holds foreground focus, so unguarded typing reached Hermes or a browser",
+        "fix": "TargetGuard.validate_keyboard() requires the target to hold focus, rejects protected foreground, and re-checks the window under the cursor; keyboard primitives also undergo the topology check",
+        "silent": true
+      },
+      {
+        "id": "scan_mode_was_a_silent_no_op",
+        "detail": "scan mode emitted virtual-key events with wScan=0, identical to unicode mode, while being documented as emitting hardware scancodes",
+        "fix": "PrimitiveType.SCANCODE emits wVk=0 + KEYEVENTF_SCANCODE with the extended-key flag, backed by a set-1 scancode table distinct from the virtual-key table",
+        "silent": true
+      }
+    ],
+    "notepad_profile_change": "text_method scan -> unicode; Notepad's editor consumes WM_CHAR, and 'scan' was a workaround for the defect above",
+    "live_validation": "NOT PERFORMED; no claim that the round trip now passes",
+    "scope": "IMPLEMENTED_NOT_VERIFIED"
   }
 }

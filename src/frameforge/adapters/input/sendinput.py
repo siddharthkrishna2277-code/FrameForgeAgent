@@ -64,6 +64,45 @@ _EXTENDED_VKS: frozenset[int] = frozenset({
     0xA2, 0xA3, 0xA4, 0xA5, 0x25, 0x26, 0x27, 0x28, 0x2D, 0x2E, 0x24, 0x23, 0x5C, 0x5D,
 })
 
+#: Name -> hardware scancode (set 1). Required for KEYEVENTF_SCANCODE, which is the only
+#: form a target reading raw WM_INPUT / DirectInput scancodes will accept.
+#:
+#: Virtual keys and scancodes are different namespaces. VK codes are layout-dependent and
+#: for the alphanumeric range equal the ASCII uppercase letter; scancodes are physical
+#: positions on a US keyboard. Confusing the two is why the previous 'scan' mode was a
+#: silent no-op - it emitted VK events while claiming to emit scancodes.
+#:
+#: The extended-key flag is implied for the keypad, arrows and right-hand modifiers; see
+#: ``_SCANCODE_EXTENDED``.
+_SC: dict[Key, int] = {
+    Key.A: 0x1E, Key.B: 0x30, Key.C: 0x2E, Key.D: 0x20, Key.E: 0x12, Key.F: 0x21,
+    Key.G: 0x22, Key.H: 0x23, Key.I: 0x17, Key.J: 0x24, Key.K: 0x25, Key.L: 0x26,
+    Key.M: 0x32, Key.N: 0x31, Key.O: 0x18, Key.P: 0x19, Key.Q: 0x10, Key.R: 0x13,
+    Key.S: 0x1F, Key.T: 0x14, Key.U: 0x16, Key.V: 0x2F, Key.W: 0x11, Key.X: 0x2D,
+    Key.Y: 0x15, Key.Z: 0x2C,
+    Key.N0: 0x0B, Key.N1: 0x02, Key.N2: 0x03, Key.N3: 0x04, Key.N4: 0x05,
+    Key.N5: 0x06, Key.N6: 0x07, Key.N7: 0x08, Key.N8: 0x09, Key.N9: 0x0A,
+    Key.ESCAPE: 0x01, Key.BACKSPACE: 0x0E, Key.TAB: 0x0F, Key.ENTER: 0x1C,
+    Key.SPACE: 0x39, Key.CAPSLOCK: 0x3A,
+    Key.SHIFT: 0x2A, Key.CTRL: 0x1D, Key.ALT: 0x38, Key.LSHIFT: 0x2A,
+    Key.LCTRL: 0x1D, Key.LALT: 0x38, Key.LWIN: 0x5B, Key.MENU: 0x5D,
+    Key.F10: 0x44,
+    Key.MINUS: 0x0C, Key.EQUALS: 0x0D, Key.LBRACKET: 0x1A, Key.RBRACKET: 0x1B,
+    Key.BACKSLASH: 0x2B, Key.SEMICOLON: 0x27, Key.APOSTROPHE: 0x28,
+    Key.COMMA: 0x33, Key.PERIOD: 0x34, Key.SLASH: 0x35, Key.GRAVE: 0x29,
+    Key.UP: 0x48, Key.DOWN: 0x50, Key.LEFT: 0x4B, Key.RIGHT: 0x4D,
+    Key.INSERT: 0x52, Key.DELETE: 0x53, Key.HOME: 0x47, Key.END: 0x4F,
+    Key.PAGEUP: 0x49, Key.PAGEDOWN: 0x51,
+}
+
+#: Scancodes that must carry ``KEYEVENTF_EXTENDEDKEY``. Without it the keypad and arrow
+#: keys collide - the same class of bug as the extended-VK table above.
+_SC_EXTENDED: frozenset[int] = frozenset({
+    0x48, 0x50, 0x4B, 0x4D,   # arrows
+    0x52, 0x53, 0x47, 0x4F, 0x49, 0x51,   # insert/delete/home/end/pgup/pgdn
+    0x5B, 0x5C, 0x5D,         # win / menu
+})
+
 _MOUSE_BUTTON_FLAGS: dict[MouseButton, tuple[int, int]] = {
     MouseButton.LEFT: (0x0002, 0x0004),
     MouseButton.RIGHT: (0x0008, 0x0010),
@@ -79,7 +118,7 @@ def is_release(primitive: Primitive) -> bool:
     Releases bypass the arm/disarm gate. That asymmetry is the whole point: a disarm that
     blocks a release strands the key.
     """
-    if primitive.kind is PrimitiveType.KEY:
+    if primitive.kind in (PrimitiveType.KEY, PrimitiveType.SCANCODE):
         return not primitive.down
     if primitive.kind is PrimitiveType.MOUSE_BUTTON:
         return not primitive.down

@@ -989,6 +989,8 @@ class InputSafetyManager:
                 self._mouse(0, 0, MOUSEEVENTF_HWHEEL, int(primitive.scroll_x * WHEEL_DELTA))
         elif kind is PrimitiveType.KEY:
             self._key(str(primitive.key), up=not primitive.down)
+        elif kind is PrimitiveType.SCANCODE:
+            self._scancode(int(primitive.scancode), up=not primitive.down)
         elif kind is PrimitiveType.UNICODE:
             for ch in primitive.text:
                 self._unicode_char(ch)
@@ -1027,6 +1029,25 @@ class InputSafetyManager:
     def _unicode_char(self, ch: str) -> None:
         item = _INPUT(type=INPUT_KEYBOARD)
         item.ki = _KEYBDINPUT(wVk=0, wScan=ord(ch), dwFlags=KEYEVENTF_UNICODE, time=0,
+                              dwExtraInfo=None)
+        self._submit(item)
+
+    def _scancode(self, scancode: int, *, up: bool) -> None:
+        """Emit a real set-1 hardware scancode.
+
+        Requires ``wVk=0`` plus ``KEYEVENTF_SCANCODE``. Passing a virtual key alongside
+        the scancode makes Windows ignore the scancode, which is precisely the silent
+        no-op this path replaces.
+        """
+        if scancode <= 0:
+            return
+        from frameforge.adapters.input.sendinput import _SC_EXTENDED
+
+        flags = KEYEVENTF_SCANCODE | (KEYEVENTF_KEYUP if up else 0)
+        if scancode in _SC_EXTENDED:
+            flags |= KEYEVENTF_EXTENDEDKEY
+        item = _INPUT(type=INPUT_KEYBOARD)
+        item.ki = _KEYBDINPUT(wVk=0, wScan=scancode, dwFlags=flags, time=0,
                               dwExtraInfo=None)
         self._submit(item)
 

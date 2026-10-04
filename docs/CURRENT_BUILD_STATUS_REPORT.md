@@ -176,6 +176,71 @@ dangerous reading is "verified against a real desktop" when the evidence was a f
 **Nothing in this build is `COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP` or
 `COMPLETE_AND_VERIFIED_LIVE_ISOLATED`.** Every verified gate below is mock-path only.
 
+## Notepad POC failure triage
+
+The "8/12" figure in earlier reports was stale. The most recent run
+(`ff-20261004-072409-368f5e`) recorded **7 pass / 2 fail of 9 steps**, and both failures
+had a single shared cause.
+
+### The failures were not OCR failures
+
+The report's `actual` field read `File\nEdit\nView` for both failing steps, which looked
+like OCR failing to find the typed marker. It was not. The saved evidence frame
+(`frames/43371820_state_menu_file.png`) was inspected directly: the document body contains
+only a single `w` (restored Notepad session state) and **no trace of the typed text**. The
+text was never on screen. OCR was reporting the truth.
+
+Classifying the report was therefore misleading in both directions — it recorded a
+perception failure where the actual defect was in input delivery.
+
+### Step classification
+
+| Step | Verify | Class |
+|---|---|---|
+| `notepad_ready` | `anchor_visible` | target safety |
+| `no_save_prompt_is_showing` | `anchor_absent` | target safety |
+| `type_probe_text` | `text_matches` | visual/OCR |
+| `probe_text_visible` | `text_matches` | visual/OCR |
+| `clear_the_document` | `always` | neutral |
+| `delete_selection` | `text_absent` | visual/OCR |
+| `probe_text_cleared` | `text_absent` | visual/OCR |
+
+The safety gate does **not** depend on OCR. Both safety steps are landmark assertions on
+the window itself, and the hwnd/pid/session/foreground/protected-window/WindowFromPoint
+checks run inside the guard independent of any verifier. OCR is used only for outcome
+verification, which is the intended division.
+
+### Two defects found and fixed
+
+1. **Keyboard input bypassed `TargetGuard` entirely.** The guard was consulted only for
+   mouse primitives. A keystroke goes to whatever holds foreground focus, so an unguarded
+   keypress while Hermes or a browser was in front typed into *that* — the same failure an
+   unguarded click causes, reached by a different route. `TargetGuard.validate_keyboard()`
+   now requires the registered target to hold focus, rejects a protected foreground window,
+   and re-checks the window under the cursor. Keyboard primitives also now undergo the
+   topology check. An unguarded keystroke is refused with zero input emitted.
+
+2. **`scan` text mode was a silent no-op.** It expanded text to `Key` values and emitted
+   ordinary virtual-key events with `wScan=0` — byte-for-byte identical to `unicode` mode,
+   while the profile and docs described it as emitting hardware scancodes. Any target
+   reading raw scancodes got nothing, with no error. `PrimitiveType.SCANCODE` now emits
+   `wVk=0` + `KEYEVENTF_SCANCODE` with the extended-key flag where required, backed by a
+   real set-1 scancode table distinct from the virtual-key table.
+
+Both were silent. Neither raised, and the existing suite passed throughout — the evidence
+frame was the only thing that distinguished "OCR could not see it" from "it was never
+there".
+
+The Notepad profile's `text_method` was `scan`, a workaround for defect 2. Notepad's
+editor is a standard Win32 EDIT control that consumes `WM_CHAR`, so it is now `unicode`,
+which is both correct and layout-independent.
+
+### Status
+
+The Notepad POC remains `NOT_IMPLEMENTED` for live validation: the defects are fixed and
+unit-tested, but no live run has been performed, so no claim is made that the round trip
+now passes.
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**
