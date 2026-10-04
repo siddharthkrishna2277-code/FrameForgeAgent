@@ -322,6 +322,152 @@ without one.
 acquisition of the real Notepad window. It is NOT live input, and it does not verify the
 typed-text round trip.**
 
+## Live POC result — run `ff-20261004-153124-4cba51`
+
+**Verdict FAIL, 7 pass / 2 fail.** This is the first live input ever emitted by this system.
+19 input events, 7 delivered to Windows, target `Notepad.exe[9896]` hwnd 46533056.
+
+### Post-run classification (evidence-backed)
+
+`first_divergence.fault_domain` was correctly **`undetermined` / `evidence_backed: false`**.
+The evidence frame was then inspected, which is what permits a domain to be named:
+
+* Artifact: `frames/72606169_state_menu_file.png`
+* Inspected: the document body is **empty** — only a caret. `FFPROBE7421` is **absent**.
+* Absent ⇒ the action never took effect ⇒ **`DELIVERY`**, evidence-backed.
+
+It is not a perception failure. OCR reported the truth, again.
+
+### What actually happened
+
+`input_audit.json` gives the exact mechanism. Event 8:
+
+```
+{"event_id": 8, "event": "unicode", "count": 0, "detail": "input disarmed"}
+```
+
+The typed text was **refused by the arm gate** — never dispatched to Windows at all. The
+event log shows the repeating signature across the whole run:
+
+| id | event | count | detail |
+|---|---|---|---|
+| 3 | cleanup | 33 | — |
+| 4 | mouse_move_abs | 0 | **input disarmed** |
+| 5 | mouse_button | 0 | **input disarmed** |
+| 6 | mouse_button | 1 | delivered |
+| 7 | cleanup | 33 | — |
+| 8 | unicode | 0 | **input disarmed** |
+
+Every `cleanup` is followed by presses refused as *"input disarmed"*.
+
+**Root cause:** `InputSafetyManager.release_all()` ends with `self.enabled = False`.
+`ActionExecutor` calls `_release_held()` on **every** batch exit, and the controller's
+`execute()` calls `release_all()` after each dispatched primitive. So the very first action
+disarmed the manager, and every subsequent press was refused. Only the initial Escape
+(events 1–2) and a few releases got through, because releases bypass the arm gate by
+design.
+
+This is a single defect with three visible symptoms: the typed text never arrived, the
+click's move was refused, and roughly half the primitives were silently dropped. It was
+invisible to the entire mock test suite because every mock port accepts primitives
+regardless of its armed state.
+
+### Classification is now evidence-backed
+
+The classifier refused to name a domain until the artifact was inspected, and the artifact
+settled it. That is the rule working as intended, on a real run, for the first time.
+
+**This run does NOT verify the typed-text round trip.** It verifies that the guard path
+holds on a live desktop: no protected-window input, no wrong-window input, target identity
+verified 14 times with 0 violations, no key or button left down, input layout unchanged.
+
+## Live POC: four defects found and fixed on the user's desktop
+
+Six live runs, all recorded. Four defects, each silent, none visible to the mock suite.
+
+### 1. `release_all()` disarmed the manager (run `ff-20261004-153124-4cba51`)
+
+`InputSafetyManager.release_all()` ended with `self.enabled = False`. The executor releases
+on every batch exit and the controller releases after every dispatched primitive, so the
+**first action of the run disarmed input** and every later press was refused with
+*"input disarmed"*. The typed text never left the machine. Evidence:
+
+```
+id=8  unicode  count=0  detail="input disarmed"
+```
+
+Every `cleanup` in the log is followed by presses refused the same way. Releases bypass the
+arm gate by design, so the sweep *looked* healthy.
+
+**Fixed:** a release sweep is a reconciliation of what is physically held, not a revocation
+of press authority. Stopping input is a separate explicit act (`disarm()`), which emergency
+stop still calls. Refused presses are now counted (`blocked_presses`) and surfaced in the
+audit, because a dropped action that is invisible in the summary is how this hid behind a
+plausible "7 pass / 2 fail".
+
+**Why 600+ tests missed it:** `FakeInput.send()` consulted only its own `_enabled` flag and
+never the safety manager's, so the fake was *more permissive* than the real adapter. It now
+consults both and arm/disarms them in lockstep — a mock more permissive than the thing it
+mocks cannot fail when the real thing does.
+
+### 2. Unicode typing was a single unspaced primitive
+
+`_compile_type_text` emitted the whole string as one `UNICODE` primitive, so the scenario's
+declared `interval_ms` was accepted by the schema and silently discarded. Now one primitive
+per character, so the gap is real. Default interval raised 12 ms → 35 ms.
+
+### 3. Unicode injection sent no key-up (run `ff-20261004-155901-b805a1`)
+
+`_unicode_char` sent only `KEYEVENTF_UNICODE` **down**, never the paired key-up. Twelve
+characters were delivered to a correctly identified, correctly focused Notepad with 0
+violations, and the document did not change. Now submitted as a down/up pair in one atomic
+`SendInput`.
+
+### 4. An aborted run reported PASS (runs `…7c6127`, `…015463`)
+
+`overall_from()` only sees verdicts from steps that executed, so a run that died during the
+typing step reported **`PASS` with four passing setup assertions** while `state` was
+`failed`. Two of those runs were green for reasons that had nothing to do with success. A
+green verdict now requires `state` to be a completed run.
+
+### Current live finding: Notepad ignores VK_PACKET
+
+`WM_GETTEXT` on Notepad's editor (class `RichEditD2DPT`, hwnd 592230) returns the ground
+truth directly, with no OCR involved:
+
+```
+text='FPROBE74'   length=8
+```
+
+That is residue from an earlier run. The current run's characters are not landing at all.
+The control is `RichEditD2DPT`, which ignores the `VK_PACKET` events `KEYEVENTF_UNICODE`
+produces. The profile has been set to `scan`, which now emits genuine scancodes.
+
+Note the history: an earlier revision also said `scan`, but as a *workaround* for the
+silent no-op fixed in `fd3fe92`. That defect is fixed, so this is now a measured choice.
+
+### The human-input guard fired, correctly
+
+The first scan run (`ff-20261004-160108-db7c86`) aborted with `HumanInputDetected` after
+**exactly one** scancode: the operator moved the mouse. The guard halted mid-sequence rather
+than firing the remaining eleven characters at a moving cursor. This is the behaviour the
+guard exists for, observed live for the first time.
+
+### What is now verified on the live desktop
+
+| Claim | Status |
+|---|---|
+| No input to a protected window | verified, 6 runs |
+| No input to a wrong window | verified, 6 runs |
+| Target identity (hwnd/pid/pid-image) | verified, 14 checks/run, 0 violations |
+| No key or button left down | verified every run |
+| Input layout unchanged | verified (`HKL=0x40090409` before and after) |
+| Human-input detection halts a live sequence | **verified live** |
+| Typed-text round trip | **NOT verified** — blocked on the VK_PACKET finding above |
+
+**Scope: `COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP` for the guard path.
+The typed-text round trip remains `IMPLEMENTED_NOT_VERIFIED`.**
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

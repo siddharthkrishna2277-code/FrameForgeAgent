@@ -663,6 +663,9 @@ class InputSafetyManager:
         self._closables: list[tuple[str, object]] = []
         self.cleanups = 0
         self.violations = 0
+        #: Presses refused because the manager was disarmed. Surfaced in the audit summary
+        #: so a silently dropped action cannot hide behind an otherwise passing report.
+        self.blocked_presses = 0
         self.last_violation_detail = ""
         #: Target validation.
         self.target_hwnd = target_hwnd
@@ -820,6 +823,12 @@ class InputSafetyManager:
             return False
 
         if not self.enabled and not releasing:
+            # Counted as a violation, not only recorded per-event. A refused press that is
+            # invisible in the summary is how the first live run reported "7 pass / 2 fail"
+            # while silently dropping half its primitives.
+            self.violations += 1
+            self.blocked_presses += 1
+            self.last_violation_detail = "input disarmed"
             self._record(primitive.kind.value, 0, violation=str(Violation.DISARMED),
                          detail="input disarmed", action_id=action_id, source=source)
             return False
@@ -1027,10 +1036,26 @@ class InputSafetyManager:
         self._submit(item)
 
     def _unicode_char(self, ch: str) -> None:
-        item = _INPUT(type=INPUT_KEYBOARD)
-        item.ki = _KEYBDINPUT(wVk=0, wScan=ord(ch), dwFlags=KEYEVENTF_UNICODE, time=0,
-                              dwExtraInfo=None)
-        self._submit(item)
+        """Emit one character as a unicode down/up pair.
+
+        The key-up is not optional. A KEYEVENTF_UNICODE *press alone* leaves the character
+        in flight: an edit control that pairs WM_KEYDOWN/WM_CHAR with WM_KEYUP - which
+        Notepad's does - never commits it. The original implementation sent the down event
+        only, and three consecutive live runs each delivered 12 characters to a correctly
+        identified, correctly focused Notepad with 0 violations and produced no text at all.
+
+        The pair is submitted together so the two events cannot be separated by another
+        thread's input.
+        """
+        pair = (_INPUT * 2)()
+        pair[0] = _INPUT(type=INPUT_KEYBOARD)
+        pair[0].ki = _KEYBDINPUT(wVk=0, wScan=ord(ch), dwFlags=KEYEVENTF_UNICODE, time=0,
+                                 dwExtraInfo=None)
+        pair[1] = _INPUT(type=INPUT_KEYBOARD)
+        pair[1].ki = _KEYBDINPUT(wVk=0, wScan=ord(ch),
+                                 dwFlags=KEYEVENTF_UNICODE | KEYEVENTF_KEYUP, time=0,
+                                 dwExtraInfo=None)
+        self._submit_many(pair, 2)
 
     def _scancode(self, scancode: int, *, up: bool) -> None:
         """Emit a real set-1 hardware scancode.
@@ -1050,6 +1075,25 @@ class InputSafetyManager:
         item.ki = _KEYBDINPUT(wVk=0, wScan=scancode, dwFlags=flags, time=0,
                               dwExtraInfo=None)
         self._submit(item)
+
+    def _submit_many(self, array, count: int) -> None:
+        """Submit an ``_INPUT`` array as one atomic SendInput call.
+
+        The array must be materialised as ``_INPUT * n`` *and* passed byref as that same
+        type. Passing a plain list, or a pointer of a different type, raises
+        ``expected LP__INPUT instance`` - which is what happened the first time.
+        """
+        if count == 0:
+            return
+        # SendInput.argtypes pins arg 2 to POINTER(_INPUT), which an array pointer does not
+        # satisfy - ctypes raises "expected LP__INPUT instance instead of pointer to
+        # _INPUT_Array_2". The cast is explicit and safe: the array really is contiguous
+        # _INPUT structs, which is exactly what the declaration demands.
+        ptr = ctypes.cast(array, ctypes.POINTER(_INPUT))
+        sent = user32.SendInput(count, ptr, ctypes.sizeof(_INPUT))
+        if sent != count:
+            raise OSError(ctypes.get_last_error(),
+                          f"SendInput delivered {sent} of {count} (target may be elevated)")
 
     def _submit(self, item) -> None:
         sent = user32.SendInput(1, ctypes.byref(item), ctypes.sizeof(_INPUT))
@@ -1187,7 +1231,18 @@ class InputSafetyManager:
         self._closables.clear()
 
         self.cleanups += 1
-        self.enabled = False
+        # Deliberately does NOT disarm.
+        #
+        # A release sweep is a reconciliation of what is physically held, not a revocation
+        # of press authority. The previous code ended here with `self.enabled = False`, and
+        # because the executor releases on every batch exit while the controller releases
+        # after every dispatched primitive, the *first* action of a run disarmed the manager
+        # and every later press was refused with "input disarmed". The first live POC run
+        # lost its typed text to exactly this, invisibly: releases are supposed to bypass
+        # the arm gate, so the sweep looked like it was working.
+        #
+        # Stopping input is a separate, explicit act - `disarm()` / `set_enabled(False)` -
+        # and emergency stop still calls it. Nothing else may revoke press authority.
         # A run must not be reported as complete if cleanup threw.
         self.cleanup_ok = not report["errors"]
         self._record("cleanup", len(report["keys_released"]) + len(report["defensive_keys"]),
@@ -1336,6 +1391,10 @@ class InputSafetyManager:
         return {
             "dispatches": len(self._records),
             "violations": self.violations,
+            #: A non-zero value here means presses were dropped by the arm gate. This is
+            #: surfaced rather than buried because the first live run reported a plausible
+            #: "7 pass / 2 fail" while silently discarding half its primitives.
+            "blocked_presses": self.blocked_presses,
             "cleanups": self.cleanups,
             "initial_layout": (self.initial_layout.to_dict() if self.initial_layout else None),
             "final_layout": (self.final_layout.to_dict() if self.final_layout else None),

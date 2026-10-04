@@ -404,9 +404,19 @@ class ActionCompiler:
 
     def _compile_type_text(self, a: TypeText) -> CompiledAction:
         if a.method == "unicode":
+            # One primitive per character, not one primitive for the whole string.
+            #
+            # The single-primitive form sent all 12 characters back to back with no gap,
+            # and Windows dropped most of them: the first live POC typed "FPROBE74"
+            # instead of "FFPROBE7421X". The scenario's declared interval_ms was accepted
+            # by the schema and then silently discarded, because nothing in the batch ever
+            # consumed it. Emitting per character makes hold_ms - and therefore the gap -
+            # real, and it is what the executor already understands.
             return CompiledAction(
                 a,
-                [Primitive(kind=PrimitiveType.UNICODE, text=a.text)],
+                [Primitive(kind=PrimitiveType.UNICODE, text=ch,
+                           hold_ms=float(a.interval_ms or 0))
+                 for ch in a.text],
                 a.blast(),
             )
         # Scan mode: emit a real hardware scancode (KEYEVENTF_SCANCODE), which is the only

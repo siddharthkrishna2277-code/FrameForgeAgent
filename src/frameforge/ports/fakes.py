@@ -202,13 +202,28 @@ class FakeInput:
         tests. Contract parity matters more than convenience here.
         """
         self._enabled = value
-        if not value and self.safety is not None:
-            self.safety.release_all(thorough=thorough)
-            if self.safety.enabled is False:
-                pass
+        # Arm/disarm the safety manager in lockstep, as the live adapter does. The live
+        # SendInputPort.set_enabled() says so explicitly - "the two must move together or
+        # input silently stops" - and the fake did not, which is why it could not observe a
+        # disarm and why the live-only defect went unnoticed.
+        if self.safety is not None:
+            if value:
+                self.safety.arm()
+            else:
+                self.safety.release_all(thorough=thorough)
+                self.safety.disarm()
 
     def send(self, primitive: Primitive) -> None:
+        # Both gates are consulted: the fake's own flag, and the safety manager's. They can
+        # disagree, and when they do the real adapter refuses the press while the fake would
+        # have accepted it - which is exactly how a live-only defect stayed invisible to the
+        # whole suite. The first live POC run found one: release_all() used to disarm the
+        # manager, so later presses were refused in reality and accepted here.
+        from frameforge.adapters.input.sendinput import is_release
+
         if not self._enabled:
+            return
+        if self.safety is not None and not self.safety.enabled and not is_release(primitive):
             return
         self.primitives.append(primitive)
         if primitive.kind == PrimitiveType.MOUSE_MOVE_ABS:

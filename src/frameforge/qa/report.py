@@ -422,6 +422,19 @@ def build_report(
     elif expected_failures:
         overall = overall if overall != "pass" else "pass"
 
+    # A run that aborted is not a run that passed.
+    #
+    # The roll-up above only sees verdicts from steps that actually executed, so a run that
+    # died during the typing step reported "PASS" with four passing setup assertions while
+    # `state` was `failed` and the typed text never happened. A green verdict must mean the
+    # scenario ran to completion; anything else is `fail`, and the reason is recorded.
+    run_state = str(getattr(state, "value", state) or "completed").lower()
+    if run_state in ("failed", "error", "aborted", "aborting"):
+        if overall == "pass":
+            overall = "fail"
+        elif overall == "unknown":
+            overall = "fail"
+
     health_kinds = {
         "capture.black", "capture.frozen", "capture.lost", "capture.unsupported",
         "display.changed", "focus.lost", "human_input.detected", "session.inactive",

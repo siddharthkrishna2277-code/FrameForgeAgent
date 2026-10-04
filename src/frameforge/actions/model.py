@@ -287,7 +287,17 @@ class TypeText(ActionBase):
     type: Literal["type_text"] = "type_text"
     text: str = Field(min_length=1, max_length=500)
     method: Literal["unicode", "scan"] = "scan"
-    interval_ms: int = Field(default=12, ge=0, le=500)
+    #: Gap between characters.
+    #:
+    #: 12 ms was too tight for a real editor: the first live POC delivered all 12
+    #: characters of "FFPROBE7421X" to a correctly-identified, correctly-focused Notepad
+    #: and the buffer received only part of it. The characters reached the OS - the audit
+    #: shows 12 dispatches, 12 deliveries, 0 violations - and the target discarded them.
+    #: 35 ms is the smallest gap that survived measurement against Notepad on this
+    #: hardware, and it is a floor for human-plausible typing rather than a speed target:
+    #: anything faster risks the same silent loss, and a dropped character is
+    #: indistinguishable from a verifier failure at the report level.
+    interval_ms: int = Field(default=35, ge=0, le=500)
 
     def default_blast(self) -> BlastClass:
         return BlastClass.EXTERNAL  # text lands somewhere; may hit a text field

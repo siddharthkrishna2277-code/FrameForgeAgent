@@ -407,7 +407,9 @@
     "P9_emergency_stop": "COMPLETE_AND_VERIFIED_MOCK",
     "notepad_dual_monitor_poc": "IMPLEMENTED_NOT_VERIFIED",
     "readonly_diagnostic_panel": "COMPLETE_AND_VERIFIED_MOCK",
-    "live_poc_preflight": "COMPLETE_AND_VERIFIED_MOCK"
+    "live_poc_preflight": "COMPLETE_AND_VERIFIED_MOCK",
+    "guard_path_live_user_desktop": "COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP",
+    "typed_text_round_trip": "IMPLEMENTED_NOT_VERIFIED"
   },
   "this_change_set": {
     "git_initialised": true,
@@ -583,5 +585,93 @@
     ],
     "scope": "COMPLETE_AND_VERIFIED_MOCK for the guard path; real acquisition of the real Notepad window; NOT live input",
     "does_not_verify": "the typed-text round trip"
+  },
+  "live_poc_result": {
+    "run_id": "ff-20261004-153124-4cba51",
+    "first_live_input_ever_emitted": true,
+    "verdict": "fail",
+    "counts": {
+      "pass": 7,
+      "fail": 2
+    },
+    "target": {
+      "pid": 9896,
+      "hwnd": 46533056,
+      "process": "Notepad.exe"
+    },
+    "input_events": 19,
+    "delivered_to_os": 7,
+    "classification": {
+      "classifier_initially_said": {
+        "fault_domain": "undetermined",
+        "evidence_backed": false
+      },
+      "evidence_artifact": "frames/72606169_state_menu_file.png",
+      "artifact_shows": "document body empty; only a caret; FFPROBE7421 absent",
+      "concluded_domain": "delivery",
+      "evidence_backed": true,
+      "not_perception": "OCR reported the truth; the text was never on screen"
+    },
+    "root_cause": {
+      "mechanism": "InputSafetyManager.release_all() ends with self.enabled = False",
+      "why_it_fired": "ActionExecutor._release_held() runs on every batch exit and the controller's execute() calls release_all() after each dispatched primitive, so the first action disarmed the manager",
+      "evidence": "input_audit.json event 8: {'event':'unicode','count':0,'detail':'input disarmed'}",
+      "signature": "every cleanup(33) is followed by presses refused as 'input disarmed'",
+      "symptoms": [
+        "typed text never arrived",
+        "the click's mouse_move was refused",
+        "roughly half the primitives silently dropped"
+      ],
+      "why_tests_missed_it": "every mock input port accepts primitives regardless of its armed state, so no test could observe the disarm"
+    },
+    "safety_claims_verified_on_live_desktop": {
+      "protected_window_input": 0,
+      "wrong_window_input": 0,
+      "target_identity_checks": 14,
+      "target_identity_violations": 0,
+      "keys_left_down": [],
+      "buttons_left_down": [],
+      "input_layout_unchanged": true,
+      "stuck_modifiers_after": "NONE"
+    },
+    "verdict_on_poc": "does NOT verify the typed-text round trip; verifies the guard path on a live desktop",
+    "scope": "COMPLETE_AND_VERIFIED_LIVE_USER_DESKTOP for the guard path; typed-text round trip remains IMPLEMENTED_NOT_VERIFIED"
+  },
+  "live_poc_defects_fixed": {
+    "1_release_all_disarmed": {
+      "run": "ff-20261004-153124-4cba51",
+      "mechanism": "release_all() ended with self.enabled = False; executor releases every batch exit and the controller releases after every dispatch",
+      "evidence": "input_audit event 8: unicode count=0 detail='input disarmed'",
+      "fix": "a release sweep reconciles held state, it does not revoke press authority; disarm stays explicit",
+      "also": "blocked_presses counter added and surfaced in the audit",
+      "why_tests_missed": "FakeInput.send consulted only its own _enabled, never safety.enabled, so the fake was more permissive than the real adapter"
+    },
+    "2_unicode_single_primitive": {
+      "fix": "one primitive per character so interval_ms is honoured; default 12 -> 35 ms"
+    },
+    "3_unicode_no_keyup": {
+      "run": "ff-20261004-155901-b805a1",
+      "mechanism": "_unicode_char sent KEYEVENTF_UNICODE down only, never the paired key-up",
+      "evidence": "12 chars delivered to correct focused Notepad, 0 violations, document unchanged",
+      "fix": "down/up pair submitted in one atomic SendInput via _submit_many(array, count) with an explicit POINTER(_INPUT) cast"
+    },
+    "4_aborted_run_reported_pass": {
+      "runs": [
+        "ff-20261004-155038-7c6127",
+        "ff-20261004-155236-015463"
+      ],
+      "mechanism": "overall_from only sees executed steps, so a run that died mid-scenario reported PASS",
+      "fix": "a green verdict now requires run state to be completed"
+    },
+    "notepad_ignores_vk_packet": {
+      "evidence": "WM_GETTEXT on RichEditD2DPT hwnd 592230 returns 'FPROBE74' length=8, residue from an earlier run",
+      "conclusion": "the current run's characters are not landing; RichEditD2DPT ignores KEYEVENTF_UNICODE VK_PACKET events",
+      "profile_changed_to": "scan"
+    },
+    "human_input_guard_fired_live": {
+      "run": "ff-20261004-160108-db7c86",
+      "detail": "aborted with HumanInputDetected after exactly one scancode; the operator moved the mouse",
+      "assessment": "correct behaviour - the guard halted mid-sequence rather than firing the remaining characters at a moving cursor"
+    }
   }
 }
