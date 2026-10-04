@@ -239,6 +239,14 @@ class SendInputPort:
 
     def send(self, primitive: Primitive, *, action_id: str = "", source: str = "") -> bool:
         """Deliver one primitive, subject to every gate. Returns whether it went out."""
+        # Lockdown is checked before the dry-run gate and before anything else, so the
+        # refusal reason is the lockdown rather than a misleading "dry run".
+        from frameforge.actions.lockdown import lockdown_active, record_refusal
+
+        if lockdown_active() and not is_release(primitive):
+            record_refusal(str(primitive.kind))
+            self._blocked += 1
+            return False
         if self._dry_run:
             return False
         if not self._enabled and not is_release(primitive):

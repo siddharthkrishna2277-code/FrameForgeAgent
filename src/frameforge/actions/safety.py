@@ -606,6 +606,40 @@ class DispatchRecord:
     outcome: str = ""
 
 
+# ------------------------------------------------------------------ lockdown gate
+#
+# Every OS input emission in this process funnels through _os_send_input. There is no
+# other route: a static test asserts the raw binding is called from exactly one place.
+#
+# The gate is here, at the boundary, rather than in the executor or the policy, because the
+# incident that produced it was a routing failure somewhere above. A check that lives above
+# can be skipped by a new code path, a misconfigured profile, or a bug; a check at the
+# syscall boundary cannot be skipped without editing this line.
+#
+# Releases are exempt. Blocking a release strands a key physically down on the operator's
+# machine, which is a worse outcome than the incident that caused this gate, and a release
+# cannot perform the side effect that triggered it.
+
+
+LOCKDOWN_DETAIL = "LIVE_INPUT_LOCKDOWN_AFTER_UNAUTHORIZED_SIDE_EFFECT"
+
+
+def _os_send_input(count: int, ptr, *, releasing: bool = False) -> int:
+    """The single OS input chokepoint. Returns 0 and emits nothing while locked down.
+
+    ``releasing=True`` is the one exemption, and it is narrow: a release undoes state that
+    was already injected. Refusing it would leave a modifier physically down on the
+    operator's keyboard, which is a more dangerous condition than the incident that caused
+    this gate, and no release can perform a click.
+    """
+    from frameforge.actions.lockdown import LiveInputLocked, lockdown_active, record_refusal
+
+    if not releasing and lockdown_active():
+        record_refusal(f"send_input:{count}")
+        raise LiveInputLocked(f"send_input:{count}")
+    return user32.SendInput(count, ptr, ctypes.sizeof(_INPUT))
+
+
 class InputSafetyManager:
     """The only permitted path to synthetic input, and the owner of input-state hygiene.
 
@@ -811,6 +845,18 @@ class InputSafetyManager:
         """
         from frameforge.adapters.input.sendinput import is_release
 
+        # Lockdown, first. Checked here as well as at the OS boundary so the refusal is a
+        # quiet `False` with an audit record, rather than an exception thrown from deep
+        # inside injection and read by the caller as a device failure.
+        from frameforge.actions.lockdown import LiveInputLocked, lockdown_active, record_refusal
+
+        if not is_release(primitive) and lockdown_active():
+            record_refusal(primitive.kind.value)
+            self.blocked_presses += 1
+            self._record(primitive.kind.value, 0, violation=str(Violation.DISARMED),
+                         detail=LOCKDOWN_DETAIL, action_id=action_id, source=source)
+            return False
+
         self.enforce_deadlines()
         releasing = is_release(primitive)
 
@@ -886,6 +932,16 @@ class InputSafetyManager:
         hook; they now go through the same accounting as everything else.
         """
         name = f"vk:0x{vk:02X}"
+        # A raw press is still a press. This method predates the lockdown and was the
+        # earlier untracked bypass; it answers to the same gate.
+        from frameforge.actions.lockdown import lockdown_active, record_refusal
+
+        if not up and lockdown_active():
+            record_refusal(f"raw_vk:{vk:02X}")
+            self.blocked_presses += 1
+            self._record("raw_vk", 0, violation=str(Violation.DISARMED),
+                         detail=LOCKDOWN_DETAIL)
+            return False
         if not armed and not up:
             self._record("raw_vk", 0, violation=str(Violation.DISARMED), detail=name)
             return False
@@ -1011,11 +1067,12 @@ class InputSafetyManager:
         ny = int(y * 65535 / max(1, vh - 1))
         return max(0, min(65535, nx)), max(0, min(65535, ny))
 
-    def _mouse(self, dx: int, dy: int, flags: int, data: int = 0) -> None:
+    def _mouse(self, dx: int, dy: int, flags: int, data: int = 0, *,
+               releasing: bool = False) -> None:
         item = _INPUT(type=INPUT_MOUSE)
         item.mi = _MOUSEINPUT(dx=dx, dy=dy, mouseData=data, dwFlags=flags, time=0,
                               dwExtraInfo=None)
-        self._submit(item)
+        self._submit(item, releasing=releasing)
 
     def _button(self, name: str, down: bool) -> None:
         flags = BUTTON_VKS.get(name)
@@ -1024,7 +1081,7 @@ class InputSafetyManager:
         data = 0
         if name in ("x1", "x2"):
             data = XBUTTON1 if name == "x1" else XBUTTON2
-        self._mouse(0, 0, flags[0] if down else flags[1], data)
+        self._mouse(0, 0, flags[0] if down else flags[1], data, releasing=not down)
 
     def _key(self, name: str, *, up: bool) -> None:
         vk = _vk_for(name)
@@ -1033,7 +1090,7 @@ class InputSafetyManager:
         flags = KEYEVENTF_KEYUP if up else 0
         item = _INPUT(type=INPUT_KEYBOARD)
         item.ki = _KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0, dwExtraInfo=None)
-        self._submit(item)
+        self._submit(item, releasing=up)
 
     def _unicode_char(self, ch: str) -> None:
         """Emit one character as a unicode down/up pair.
@@ -1074,7 +1131,7 @@ class InputSafetyManager:
         item = _INPUT(type=INPUT_KEYBOARD)
         item.ki = _KEYBDINPUT(wVk=0, wScan=scancode, dwFlags=flags, time=0,
                               dwExtraInfo=None)
-        self._submit(item)
+        self._submit(item, releasing=up)
 
     def _submit_many(self, array, count: int) -> None:
         """Submit an ``_INPUT`` array as one atomic SendInput call.
@@ -1090,13 +1147,20 @@ class InputSafetyManager:
         # _INPUT_Array_2". The cast is explicit and safe: the array really is contiguous
         # _INPUT structs, which is exactly what the declaration demands.
         ptr = ctypes.cast(array, ctypes.POINTER(_INPUT))
-        sent = user32.SendInput(count, ptr, ctypes.sizeof(_INPUT))
+        sent = _os_send_input(count, ptr)
         if sent != count:
             raise OSError(ctypes.get_last_error(),
                           f"SendInput delivered {sent} of {count} (target may be elevated)")
 
-    def _submit(self, item) -> None:
-        sent = user32.SendInput(1, ctypes.byref(item), ctypes.sizeof(_INPUT))
+    def _submit(self, item, *, releasing: bool = False) -> None:
+        """Emit one INPUT structure.
+
+        ``releasing`` must be passed truthfully by the caller rather than inferred here: the
+        only safe reading of "this is a release" is at the site that knows whether the event
+        being built is a key-up. Inference is how a release ends up blocked and strands a
+        modifier on the operator's machine.
+        """
+        sent = _os_send_input(1, ctypes.byref(item), releasing=releasing)
         if sent != 1:
             raise OSError(ctypes.get_last_error(), "SendInput failed (target may be elevated)")
 
@@ -1164,7 +1228,7 @@ class InputSafetyManager:
                 items[slot].ki = _KEYBDINPUT(wVk=vk, wScan=0, dwFlags=KEYEVENTF_KEYUP,
                                              time=0, dwExtraInfo=None)
             try:
-                sent = user32.SendInput(len(mod_items), items, ctypes.sizeof(_INPUT))
+                sent = _os_send_input(len(mod_items), items, releasing=True)
                 report["mods_swept"] = [label for label, _ in mod_items]
                 if sent != len(mod_items):
                     report["errors"].append(
@@ -1201,7 +1265,7 @@ class InputSafetyManager:
                 items[slot].ki = _KEYBDINPUT(wVk=vk, wScan=0, dwFlags=flags, time=0,
                                              dwExtraInfo=None)
             try:
-                sent = user32.SendInput(len(defensive), items, ctypes.sizeof(_INPUT))
+                sent = _os_send_input(len(defensive), items, releasing=True)
                 if sent == len(defensive):
                     report["defensive_keys"] = [n for n, _ in defensive]
                 else:

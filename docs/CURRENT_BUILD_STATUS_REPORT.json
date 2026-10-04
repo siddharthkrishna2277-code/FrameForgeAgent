@@ -797,5 +797,63 @@
       ]
     },
     "poc_status": "NOT VERIFIED"
+  },
+  "statuses": {
+    "LIVE_INPUT": "LOCKED_DOWN_AFTER_UNAUTHORIZED_SIDE_EFFECT",
+    "MOUSE_TARGET_AUTHORITY": "CONTRADICTED_BY_LIVE_EVIDENCE",
+    "DUAL_MONITOR_NOTEPAD_POC": "NOT_VERIFIED",
+    "FURTHER_LIVE_TESTS": "PROHIBITED_PENDING_EXPLICIT_USER_APPROVAL"
+  },
+  "forensic_incident": {
+    "summary": "a click intended for Notepad on the external monitor landed inside Hermes on the laptop monitor, activated Skills/APIs, linked a paid model, and the owner received an account-level confirmation email",
+    "classification": "safety incident, not a test failure",
+    "live_input_during_investigation": false,
+    "root_cause": "UNDETERMINED - the decisive telemetry was never recorded",
+    "missing_telemetry": [
+      "normalised SendInput dx/dy (returned by _abs_norm and discarded)",
+      "actual cursor position after the move (GetCursorPos never called in the injection path)",
+      "actual window under the cursor at button-down (WindowFromPoint runs at the planned point)",
+      "button identity per event (audit records mouse_button with no button field)",
+      "planned client point, coordinate space, virtual-desktop bounds, dpi mode"
+    ],
+    "established_with_confidence": {
+      "MOUSEEVENTF_ABSOLUTE_set": true,
+      "MOUSEEVENTF_VIRTUALDESK_set": true,
+      "verified_against": "installed Windows SDK winuser.h",
+      "ruled_out": [
+        "primary-monitor normalisation",
+        "missing MOUSEEVENTF_VIRTUALDESK",
+        "Hermes missing from the protected registry"
+      ],
+      "abs_norm_origin_defect": "real but latent; 0 px error at origin (0,0); 1921 px error at origin -1920",
+      "actual_mechanism": "the pre-button-down guard validates self._verified_move (planned) and never the actual cursor position; WindowFromPoint is evaluated at the planned coordinate, so it reports the target even when the cursor is elsewhere"
+    },
+    "account_side_changes": {
+      "made": false,
+      "model_unlinked_or_modified": false,
+      "billing_settings_touched": false,
+      "reported_exposure": "one paid model appears linked on the owner account; confirmation email received; billing impact unknown",
+      "note": "no account-side action will be taken without explicit owner authorisation"
+    },
+    "re_enable_checklist": {
+      "done": [
+        "OS-boundary lockdown, no runtime unlock",
+        "zero-emission proof for every primitive class",
+        "pure coordinate transform with all four SM_*VIRTUAL* metrics incl. negative origin",
+        "MOVE|ABSOLUTE|VIRTUALDESK asserted",
+        "non-live simulation backend with full telemetry",
+        "topology tests right/left/above/below, unequal sizes, mixed DPI",
+        "a layout where primary-only normalisation lands inside Hermes"
+      ],
+      "outstanding": [
+        "fix _abs_norm to include the virtual origin",
+        "read back the actual cursor position after every move",
+        "validate WindowFromPoint(GetCursorPos()) before every button-down",
+        "define and enforce a planned-vs-actual tolerance",
+        "record normalised dx/dy, actual cursor and button identity in the live audit",
+        "deny-by-default policy for Hermes and account/billing/plugin surfaces",
+        "written owner approval for a single constrained live run"
+      ]
+    }
   }
 }

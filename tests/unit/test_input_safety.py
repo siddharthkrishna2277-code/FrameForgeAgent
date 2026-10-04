@@ -12,6 +12,24 @@ from __future__ import annotations
 
 import pytest
 
+
+@pytest.fixture
+def lockdown_suspended():
+    """Lift the live-input lockdown for tests of contracts it deliberately suspends.
+
+    Key-release delivery, held-key tracking and post-run verification are behaviours that must
+    keep working when live input is eventually re-authorised. They cannot be observed while
+    every press is refused, so those tests suspend the gate explicitly rather than being
+    deleted or weakened.
+    """
+    from frameforge.actions import lockdown
+
+    lockdown._state.active = False
+    try:
+        yield
+    finally:
+        lockdown._state.active = True
+
 from frameforge.actions.safety import (
     InputSafetyManager,
     LayoutState,
@@ -57,6 +75,7 @@ def mup(button=MouseButton.LEFT):
 # --------------------------------------------------------------------- the defect
 
 
+@pytest.mark.usefixtures("lockdown_suspended")
 class TestTheReleaseBlockingDefect:
     """TEST 12: termination while a modifier key is logically down."""
 
@@ -170,6 +189,7 @@ class TestLanguageAndChordGuards:
 # ----------------------------------------------------------------- exit paths 1-12
 
 
+@pytest.mark.usefixtures("lockdown_suspended")
 class TestExitPaths:
     """One test per exit path named in the incident report."""
 
@@ -303,6 +323,7 @@ class TestExitPaths:
 # ------------------------------------------------------------- post-run checking
 
 
+@pytest.mark.usefixtures("lockdown_suspended")
 class TestPostRunVerification:
     """TEST: post-run diagnostic must be able to warn, and must be non-invasive."""
 
@@ -346,6 +367,7 @@ class TestPostRunVerification:
         assert path.exists() and "post_run_check" in path.read_text(encoding="utf-8")
 
 
+@pytest.mark.usefixtures("lockdown_suspended")
 class TestExecutorIntegration:
     """The executor must release through the manager on every path."""
 

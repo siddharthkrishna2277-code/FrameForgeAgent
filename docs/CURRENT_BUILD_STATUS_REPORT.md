@@ -696,6 +696,126 @@ exact topology (Hermes on primary, Notepad on external, 3840×1080 virtual deskt
 * **Dual-monitor Notepad POC: NOT VERIFIED.**
 * Incident attribution: **UNDETERMINED** — needs the run ID or timestamp.
 
+## FORENSIC INCIDENT REPORT — unauthorized account-level side effect
+
+**Severity: safety incident. Not a test failure.**
+**No live input was emitted during this investigation.** No test was run, no cursor moved,
+nothing clicked or typed. Only read-only OS queries.
+
+### Observed live evidence
+
+A click intended for a Notepad document on the external monitor landed inside the Hermes
+window on the laptop monitor. It activated the Skills/APIs area, linked a paid model, and the
+owner received an account-level confirmation email.
+
+What the preserved telemetry can and cannot establish:
+
+| Query | Result |
+|---|---|
+| Mouse button events delivered, all runs | 32, **all left button** |
+| Right-click events, all runs | **0** |
+| `allow_right_click = True` in `src/` | **none** |
+| Events naming the **button** | **not recorded** — the audit schema omits it |
+| Events recording the **normalised dx/dy** | **not recorded** |
+| Events recording the **actual cursor position** | **not recorded** |
+| Events recording the **target HWND at the point** | foreground only |
+
+So the incident's decisive fields were never captured. The three telemetry gaps below are
+the reason this cannot be closed from evidence.
+
+### Root cause
+
+**UNDETERMINED.** Not from lack of analysis — from absent telemetry. Precisely:
+
+| Required field | Recorded? |
+|---|---|
+| normalised SendInput dx/dy | **NO** — `_abs_norm` returns a pair and discards it |
+| actual cursor position after the move | **NO** — `GetCursorPos` is called nowhere in the injection path |
+| actual window under the cursor at button-down | **NO** — `WindowFromPoint` is evaluated at the *planned* point |
+| button identity per event | **NO** — audit records `mouse_button` with no button field |
+| planned client point, coordinate space, virtual-desktop bounds, dpi mode | **NO** |
+
+**What the code does establish, with confidence:**
+
+1. `MOUSEEVENTF_ABSOLUTE` (0x8000) and `MOUSEEVENTF_VIRTUALDESK` (0x4000) are both set on
+   every absolute move — verified against the installed Windows SDK `winuser.h`, and both
+   flags appear in `_inject`. **Primary-monitor normalisation and a missing VIRTUALDESK flag
+   are ruled out as causes.**
+2. `_abs_norm` divides by virtual **size** and omits virtual **origin**. Measured geometry
+   here is origin (0,0), span 3840×1080, so the error is **0 px at every point tested** and
+   this **did not cause the incident**. It is a latent defect: at origin −1920 a planned
+   (1919,500) lands at (−2,499), a 1921 px error onto the wrong display.
+3. The pre-button-down guard validates `self._verified_move` — the **planned** point — never
+   the actual cursor position, and no tolerance exists. `WindowFromPoint` runs at the planned
+   coordinate, so it reports the target even when the cursor is elsewhere. **This is the only
+   identified mechanism by which a click could reach Hermes with every other check passing.**
+4. Hermes *is* covered by the protected registry — `protect_current_process()` plus the
+   `chrome_widgetwin_1` class. **Hermes protection was not the gap**; a click that lands
+   inside Hermes is refused by pid/class *when the guard runs at all*, which is exactly the
+   case that does not occur when the point under evaluation is not where the cursor is.
+
+### Required telemetry, implemented in the simulation backend
+
+`adapters/input/simulated.py` records, per event: `run_id`, `action_id`,
+`intended_target_hwnd/pid/title/class`, `intended_client_point`, `intended_screen_point`,
+`coordinate_space`, `virtual_desktop_bounds`, `target_monitor_bounds`, `dpi_awareness`,
+`normalized_dx_dy`, `injection_flags` (numeric **and** named), `actual_cursor_point`,
+`actual_window`, `foreground_window`, `protected_target_decision`, `guard_decision`,
+`input_emitted`.
+
+### Live-input lockdown
+
+`actions/lockdown.py`, enforced at the ctypes boundary:
+
+```
+LIVE_INPUT = LOCKED_DOWN_AFTER_UNAUTHORIZED_SIDE_EFFECT
+```
+
+Every OS emission funnels through `_os_send_input`, the single `user32.SendInput` call site
+in the entire tree (AST-verified). There is **no runtime unlock** — no environment variable,
+config key, CLI flag, profile field or model instruction can lift it; re-authorisation
+requires a code change in a reviewed commit.
+
+Refusals raise `LiveInputLocked` rather than returning 0, because every caller checks the
+returned count and would otherwise record a policy refusal as a device failure.
+
+**Releases are exempt.** Blocking a release strands a modifier physically down on the
+operator's machine, which is worse than the incident that caused the gate, and no release
+can perform a click.
+
+### Statuses
+
+```
+LIVE_INPUT                    = LOCKED_DOWN_AFTER_UNAUTHORIZED_SIDE_EFFORT
+MOUSE_TARGET_AUTHORITY        = CONTRADICTED_BY_LIVE_EVIDENCE
+DUAL_MONITOR_NOTEPAD_POC      = NOT_VERIFIED
+FURTHER_LIVE_TESTS            = PROHIBITED_PENDING_EXPLICIT_USER_APPROVAL
+```
+
+### Account-side changes
+
+**None made.** No model was unlinked, modified, deleted or disabled. No billing or usage
+setting was touched. No account-side action will be taken without explicit authorisation.
+Reported exposure: one paid model appears to have been linked on the owner's account, with a
+confirmation email received. Billing impact is unknown and is the owner's to inspect.
+
+### Re-enable checklist — NOT satisfied, do not proceed
+
+1. ✅ Fail-closed lockdown at the OS boundary, no runtime unlock
+2. ✅ Zero-emission proof for every primitive class (16 tests)
+3. ✅ Pure coordinate transform using all four `SM_*VIRTUAL*` metrics, incl. negative origin
+4. ✅ `MOUSEEVENTF_MOVE | ABSOLUTE | VIRTUALDESK` asserted on every absolute move
+5. ✅ Non-live simulation backend recording the full telemetry set
+6. ✅ Topology tests: external right/left/above/below, unequal sizes, mixed DPI
+7. ✅ A layout where primary-only normalisation lands inside Hermes
+8. ⬜ **Fix `_abs_norm` to include the virtual origin** (open defect)
+9. ⬜ **Read back the actual cursor position after every move**
+10. ⬜ **Validate `WindowFromPoint(GetCursorPos())` immediately before every button-down**
+11. ⬜ **Define and enforce a planned-vs-actual tolerance**
+12. ⬜ **Record normalised dx/dy, actual cursor, button identity in the live audit**
+13. ⬜ **Deny-by-default policy for Hermes and account/billing/plugin surfaces by PID and class**
+14. ⬜ **Owner approval, in writing, for a single constrained live run**
+
 ## Overall readiness rating
 
 **INTERNAL ALPHA — SAFE FOR MOCK TESTING. NOT SAFE FOR ANY LIVE DESKTOP INPUT.**

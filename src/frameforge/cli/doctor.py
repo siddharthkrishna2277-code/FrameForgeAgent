@@ -111,6 +111,22 @@ def run_checks(verbose: bool = False) -> list[Check]:
         except Exception as exc:
             checks.append(Check("capture:mss", BAD, f"{type(exc).__name__}: {exc}"))
 
+    # ------------------------------------------------------------------ lockdown
+    try:
+        from frameforge.actions.lockdown import state as lockdown_state
+
+        st = lockdown_state()
+        note = (f"{st['refused_primitives']} primitives refused"
+                if st["active"] else "NOT LOCKED")
+        checks.append(Check(
+            "live-input-lockdown",
+            BAD if st["active"] else OK,
+            f"{st['LIVE_INPUT']} ({note})",
+            "" if st["active"] else "",
+        ))
+    except Exception as exc:
+        checks.append(Check("live-input-lockdown", BAD, f"probe failed: {type(exc).__name__}"))
+
     # ---------------------------------------------------------- monitors/layout
     if _mod("win32gui"):
         try:
